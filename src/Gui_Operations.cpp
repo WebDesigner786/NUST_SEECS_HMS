@@ -596,7 +596,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
         ImGui::InputTextWithHint("Phone", "03XX-XXXXXXX or +92 3XX XXXXXXX", m_crmState.formPhone, sizeof(m_crmState.formPhone));
         if (!phoneOk) { ImGui::TextColored(pal.statusOccupied, "%s", phoneErr.c_str()); }
 
-        ImGui::InputTextWithHint("Email", "guest@seecs.edu.pk", m_crmState.formEmail, sizeof(m_crmState.formEmail));
+        ImGui::InputTextWithHint("Email", "name@example.com", m_crmState.formEmail, sizeof(m_crmState.formEmail));
         if (!emailOk) { ImGui::TextColored(pal.statusOccupied, "%s", emailErr.c_str()); }
 
         ImGui::InputText("Nationality", m_crmState.formNationality, sizeof(m_crmState.formNationality));

@@ -483,6 +483,12 @@ YieldPricingResult computeYieldPricing(
 );
 
 // Generates revenue-vs-surge curve (1.00 to 1.60) for elasticity epsilon (default -1.2) and finds optimal surge
+// Latent (unconstrained) nightly room demand at the current price for a given occupancy ratio 0..1:
+// D0 = occupancy * TOTAL_ROOMS * 1.35 (guests who would book if rooms were available)
+inline double latentDemandForOccupancy(double occupancy01) {
+    return occupancy01 * static_cast<double>(Cfg::TOTAL_ROOMS) * 1.35;
+}
+
 std::vector<YieldCurvePoint> simulateYieldCurve(
     double baseReferencePrice,
     double baseDemandD0,

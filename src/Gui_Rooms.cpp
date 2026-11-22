@@ -887,7 +887,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
 
     const int32_t reqIn  = today + m_wizardState.checkInOffsetDays;
     const int32_t reqOut = reqIn + std::max(1, m_wizardState.nights);
-    const char* promoOptions[4] = {"None", "WELCOME10", "NUST500", "SEECS15"};
+    const char* promoOptions[4] = {"None", "WELCOME10", "SAVE500", "STAY15"};
 
     if (beginCard("##WizardBody", stepLabels[m_wizardState.step], ImVec2(0.0f, 0.0f))) {
         // ---------------------------------------------------------------------
@@ -958,7 +958,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                     ImGui::InputTextWithHint("Phone", "03XX-XXXXXXX or +92 3XX XXXXXXX", m_wizardState.newPhoneBuf, sizeof(m_wizardState.newPhoneBuf));
                     if (!phoneOk) { ImGui::TextColored(pal.statusOccupied, "%s", phoneErr.c_str()); }
 
-                    ImGui::InputTextWithHint("Email", "guest@seecs.edu.pk", m_wizardState.newEmailBuf, sizeof(m_wizardState.newEmailBuf));
+                    ImGui::InputTextWithHint("Email", "name@example.com", m_wizardState.newEmailBuf, sizeof(m_wizardState.newEmailBuf));
                     if (!emailOk) { ImGui::TextColored(pal.statusOccupied, "%s", emailErr.c_str()); }
 
                     ImGui::InputTextWithHint("Nationality", "Pakistan", m_wizardState.newNationalityBuf, sizeof(m_wizardState.newNationalityBuf));
@@ -1075,7 +1075,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
             ImGui::Combo("Promo Code", &m_wizardState.promoIndex, promoOptions, 4);
             if (m_wizardState.promoIndex == 3 && m_wizardState.nights < 3) {
                 ImGui::SameLine();
-                ImGui::TextColored(pal.statusReserved, "SEECS15 requires 3+ nights.");
+                ImGui::TextColored(pal.statusReserved, "STAY15 requires 3+ nights.");
             }
 
             if (m_wizardState.checkInOffsetDays == 0) {

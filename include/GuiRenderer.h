@@ -13,6 +13,12 @@
 
 namespace hms {
 
+/* Returns the end of the visible part of an ImGui label (before any "##id" suffix). O(N) time, O(1) space. */
+inline const char* visibleLabelEnd(const char* label) { return ImGui::FindRenderedTextEnd(label); }
+
+/* Measures only the visible portion of a label (ignores "##id"). O(N) time, O(1) space. */
+inline ImVec2 visibleTextSize(const char* label) { return ImGui::CalcTextSize(label, nullptr, true); }
+
 // =============================================================================
 // 1. SCREEN ROUTING & NAVIGATION DEFINITIONS (Section 7)
 // =============================================================================
@@ -168,7 +174,7 @@ struct SmartCheckInState {
     int  nights              = 2;
     int  adults              = 2;
     int  children            = 0;
-    int  promoIndex          = 0; // 0 None, 1 WELCOME10, 2 NUST500, 3 SEECS15
+    int  promoIndex          = 0; // 0 None, 1 WELCOME10, 2 SAVE500, 3 STAY15
     bool immediateCheckIn    = true;
 
     // Step 3: Preferences & Cached Recommendations

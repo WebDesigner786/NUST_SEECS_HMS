@@ -319,14 +319,24 @@ void ThemeEngine::update(float deltaTimeSeconds) {
 }
 
 /*
- * Purpose: Attempts to load system TTF fonts (17px body, 28px heading, 12px caption) in Section 2 order,
+ * Purpose: Attempts to load system TTF fonts (19px body, 30px heading, 15px caption, times the display content scale) in Section 2 order,
  *          falling back safely to ImGui's built-in default font if none exist.
  * Inputs: Reference to ImGuiIO.
  * Outputs: FontBank containing pointers to bodyFont, headingFont, captionFont and status metadata.
  * Big-O: O(F) where F is the number of candidate font paths (3 candidates).
  */
-FontBank ThemeEngine::loadFonts(ImGuiIO& io) {
+FontBank ThemeEngine::loadFonts(ImGuiIO& io, float contentScale) {
     FontBank bank{};
+    const float sc = std::clamp(contentScale, 1.0f, 3.0f);
+    // Persistent glyph ranges: Latin-1, general punctuation (dashes, quotes, bullets), arrows, minus sign.
+    static const ImWchar kGlyphRanges[] = {
+        0x0020, 0x00FF,
+        0x2010, 0x2027,
+        0x2030, 0x203A,
+        0x2190, 0x2193,
+        0x2212, 0x2212,
+        0
+    };
     const char* candidatePaths[] = {
         "C:/Windows/Fonts/segoeui.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -347,20 +357,23 @@ FontBank ThemeEngine::loadFonts(ImGuiIO& io) {
         cfgBody.OversampleH = 3;
         cfgBody.OversampleV = 2;
         cfgBody.PixelSnapH = true;
+        cfgBody.GlyphRanges = kGlyphRanges;
 
         ImFontConfig cfgHeading{};
         cfgHeading.OversampleH = 3;
         cfgHeading.OversampleV = 2;
         cfgHeading.PixelSnapH = true;
+        cfgHeading.GlyphRanges = kGlyphRanges;
 
         ImFontConfig cfgCaption{};
         cfgCaption.OversampleH = 3;
         cfgCaption.OversampleV = 2;
         cfgCaption.PixelSnapH = true;
+        cfgCaption.GlyphRanges = kGlyphRanges;
 
-        bank.bodyFont    = io.Fonts->AddFontFromFileTTF(chosenPath.c_str(), 17.0f, &cfgBody);
-        bank.headingFont = io.Fonts->AddFontFromFileTTF(chosenPath.c_str(), 28.0f, &cfgHeading);
-        bank.captionFont = io.Fonts->AddFontFromFileTTF(chosenPath.c_str(), 12.0f, &cfgCaption);
+        bank.bodyFont    = io.Fonts->AddFontFromFileTTF(chosenPath.c_str(), 19.0f * sc, &cfgBody);
+        bank.headingFont = io.Fonts->AddFontFromFileTTF(chosenPath.c_str(), 30.0f * sc, &cfgHeading);
+        bank.captionFont = io.Fonts->AddFontFromFileTTF(chosenPath.c_str(), 15.0f * sc, &cfgCaption);
 
         if (bank.bodyFont != nullptr && bank.headingFont != nullptr && bank.captionFont != nullptr) {
             io.FontDefault = bank.bodyFont;

@@ -221,7 +221,7 @@ void HotelSystem::tick(double deltaTimeSeconds) {
         if (isLoggedIn()) {
             std::string snapName;
             if (m_fileManager.createBackupSnapshot(&snapName)) {
-                pushNotice(NoticeType::Info, "Auto Backup", "Snapshot saved: " + snapName);
+                pushNotice(NoticeType::Info, "Automatic backup", "Backup saved: " + snapName);
             }
         }
     }
@@ -340,7 +340,7 @@ LoginResult HotelSystem::login(const std::string& username, const std::string& p
 
                 res.success = true;
                 res.message = "Welcome back, " + u.displayName;
-                pushNotice(NoticeType::Success, "Signed In", "Logged in as " + u.displayName + " (" + toString(u.role) + ")");
+                pushNotice(NoticeType::Success, "Signed in", "Welcome, " + u.displayName + " (" + toString(u.role) + ")");
                 return res;
             }
             break;
@@ -464,7 +464,7 @@ bool HotelSystem::createUser(
     m_fileManager.saveUsers(m_db.users);
     m_fileManager.saveSettings(m_db.settings);
     m_fileManager.saveAuditLog(m_db.auditLog);
-    pushNotice(NoticeType::Success, "Staff Created", "Account '" + username + "' added.");
+    pushNotice(NoticeType::Success, "Staff account created", "Account '" + username + "' was added.");
     return true;
 }
 
@@ -483,9 +483,29 @@ bool HotelSystem::setUserActive(int userId, bool active, std::string* outError) 
     }
     if (userId == m_currentUserId && !active) {
         if (outError != nullptr) {
-            *outError = "You cannot disable your own currently signed-in account.";
+            *outError = "You cannot disable the account you are signed in with.";
         }
+        pushNotice(NoticeType::Error, "Cannot disable account", "You cannot disable the account you are signed in with.");
         return false;
+    }
+    if (!active) {
+        // Never allow the last active Admin account to be disabled
+        const User* target = nullptr;
+        int otherActiveAdmins = 0;
+        for (const User& cand : m_db.users) {
+            if (cand.id == userId) {
+                target = &cand;
+            } else if (cand.role == Role::Admin && cand.active) {
+                ++otherActiveAdmins;
+            }
+        }
+        if (target != nullptr && target->role == Role::Admin && target->active && otherActiveAdmins == 0) {
+            if (outError != nullptr) {
+                *outError = "At least one active Admin account is required.";
+            }
+            pushNotice(NoticeType::Error, "Cannot disable account", "At least one active Admin account is required.");
+            return false;
+        }
     }
     for (User& u : m_db.users) {
         if (u.id == userId) {
@@ -493,7 +513,7 @@ bool HotelSystem::setUserActive(int userId, bool active, std::string* outError) 
             logAudit("USER_STATUS", std::string(active ? "Enabled" : "Disabled") + " user '" + u.username + "'");
             m_fileManager.saveUsers(m_db.users);
             m_fileManager.saveAuditLog(m_db.auditLog);
-            pushNotice(NoticeType::Info, "Staff Updated", u.username + (active ? " enabled." : " disabled."));
+            pushNotice(NoticeType::Info, "Staff updated", "Account '" + u.username + (active ? "' enabled." : "' disabled."));
             return true;
         }
     }
@@ -569,7 +589,7 @@ int HotelSystem::registerGuest(const Guest& inputGuest, std::string* outError) {
     m_fileManager.saveGuests(m_db.guests);
     m_fileManager.saveSettings(m_db.settings);
     m_fileManager.saveAuditLog(m_db.auditLog);
-    pushNotice(NoticeType::Success, "Guest Registered", g.fullName + " added to CRM.");
+    pushNotice(NoticeType::Success, "Guest registered", g.fullName + " was added to the guest directory.");
     return g.id;
 }
 
@@ -906,7 +926,7 @@ bool HotelSystem::setRoomStatus(int roomId, RoomStatus newStatus, bool recordUnd
 
     logAudit(
         "ROOM_STATUS",
-        "Room " + std::to_string(roomNum) + " status changed: " + toString(oldStatus) + " -> " + toString(newStatus)
+        "Room " + std::to_string(roomNum) + " changed from " + toString(oldStatus) + " to " + toString(newStatus)
     );
     m_fileManager.saveRooms(m_db.rooms);
     m_fileManager.saveAuditLog(m_db.auditLog);
@@ -1034,8 +1054,10 @@ int HotelSystem::createBooking(
 
     logAudit(
         immediateCheckIn ? "CHECK_IN" : "BOOKING_CREATE",
-        "Booking #" + std::to_string(b.id) + " for " + guest->fullName + " in Room " + std::to_string(room->number) +
-            " (" + DateUtil::formatDate(checkInDay) + " to " + DateUtil::formatDate(checkOutDay) + ")"
+        immediateCheckIn
+            ? (guest->fullName + " checked in to Room " + std::to_string(room->number) + " (BK-" + std::to_string(b.id) + ")")
+            : ("Booking BK-" + std::to_string(b.id) + " created for " + guest->fullName + ", " +
+               std::to_string(std::max(1, checkOutDay - checkInDay)) + " nights, Room " + std::to_string(room->number))
     );
     m_fileManager.saveBookings(m_db.bookings);
     m_fileManager.saveRooms(m_db.rooms);
@@ -1044,8 +1066,8 @@ int HotelSystem::createBooking(
 
     pushNotice(
         NoticeType::Success,
-        immediateCheckIn ? "Guest Checked In" : "Reservation Confirmed",
-        guest->fullName + " -> Room " + std::to_string(room->number) + " (Booking #" + std::to_string(b.id) + ")"
+        immediateCheckIn ? "Guest checked in" : "Booking confirmed",
+        guest->fullName + ", Room " + std::to_string(room->number) + " (BK-" + std::to_string(b.id) + ")"
     );
     return b.id;
 }
@@ -1093,13 +1115,13 @@ bool HotelSystem::checkInBooking(int bookingId, std::string* outError) {
     const Guest* g = findGuestById(b->guestId);
     logAudit(
         "CHECK_IN",
-        "Checked in Booking #" + std::to_string(b->id) + " (" + (g ? g->fullName : "Guest") + ") to Room " +
-            std::to_string(room->number)
+        (g ? g->fullName : std::string("Guest")) + " checked in to Room " + std::to_string(room->number) +
+            " (BK-" + std::to_string(b->id) + ")"
     );
     m_fileManager.saveBookings(m_db.bookings);
     m_fileManager.saveRooms(m_db.rooms);
     m_fileManager.saveAuditLog(m_db.auditLog);
-    pushNotice(NoticeType::Success, "Checked In", "Room " + std::to_string(room->number) + " is now Occupied.");
+    pushNotice(NoticeType::Success, "Checked in", "Room " + std::to_string(room->number) + " is now occupied.");
     return true;
 }
 
@@ -1197,18 +1219,18 @@ CheckOutResult HotelSystem::checkOutBooking(
 
     logAudit(
         "CHECK_OUT",
-        "Room " + std::to_string(room->number) + " checked out; " + inv.number + " (" + formatPKR(inv.grandTotal) + ")"
+        "Room " + std::to_string(room->number) + " checked out, " + inv.number + " issued (" + formatPKR(inv.grandTotal) + ")"
     );
 
     saveAll();
 
-    res.message = "Room " + std::to_string(room->number) + " Checked Out — Invoice #" + inv.number + " Generated";
-    pushNotice(NoticeType::Success, "Check-Out Complete", res.message);
+    res.message = "Room " + std::to_string(room->number) + " checked out. Invoice " + inv.number + " created.";
+    pushNotice(NoticeType::Success, "Check-out complete", res.message);
     if (res.loyaltyPromoted) {
         pushNotice(
             NoticeType::Success,
-            "Loyalty Promotion!",
-            guest->fullName + " promoted from " + toString(oldTier) + " to " + toString(newTier) + "!"
+            "Loyalty tier upgraded",
+            guest->fullName + " moved from " + toString(oldTier) + " to " + toString(newTier) + "."
         );
     }
     return res;
@@ -1296,8 +1318,8 @@ bool HotelSystem::cancelBooking(int bookingId, bool isNoShow, std::string* outEr
     }
     pushNotice(
         NoticeType::Warning,
-        isNoShow ? "Marked No-Show" : "Booking Cancelled",
-        "Booking #" + std::to_string(b->id) + (cancellationFee > 0.0 ? " — Fee: " + formatPKR(cancellationFee) : " — No fee")
+        isNoShow ? "Marked as no-show" : "Booking cancelled",
+        "Booking BK-" + std::to_string(b->id) + (cancellationFee > 0.0 ? ". Cancellation fee: " + formatPKR(cancellationFee) : ". No cancellation fee.")
     );
     return true;
 }
@@ -1411,8 +1433,8 @@ bool HotelSystem::swapBookingRoom(int bookingId, int newRoomId, bool recordUndo,
 
     pushNotice(
         NoticeType::Info,
-        "Room Swapped",
-        "Booking #" + std::to_string(bookingId) + " moved to Room " + std::to_string(newRoomNum)
+        "Room changed",
+        "Booking BK-" + std::to_string(bookingId) + " moved to Room " + std::to_string(newRoomNum)
     );
     return true;
 }
@@ -1539,8 +1561,8 @@ bool HotelSystem::addChargeToBooking(int bookingId, const AddOn& addOn, bool rec
 
     pushNotice(
         NoticeType::Info,
-        "Charge Posted",
-        addOn.description + " (" + formatPKR(addOn.unitPrice * addOn.quantity) + ") added to Booking #" +
+        "Charge added",
+        addOn.description + " (" + formatPKR(addOn.unitPrice * addOn.quantity) + ") added to booking BK-" +
             std::to_string(bookingId)
     );
     return true;
@@ -1588,7 +1610,7 @@ int HotelSystem::addToWaitlist(
     m_fileManager.saveWaitlist(m_db.waitlist);
     m_fileManager.saveSettings(m_db.settings);
     m_fileManager.saveAuditLog(m_db.auditLog);
-    pushNotice(NoticeType::Info, "Waitlist Updated", "Guest added to FIFO waitlist (#" + std::to_string(wl.id) + ").");
+    pushNotice(NoticeType::Info, "Waitlist updated", "Guest added to the waitlist (#" + std::to_string(wl.id) + ").");
     return wl.id;
 }
 
@@ -1644,8 +1666,8 @@ int HotelSystem::checkWaitlistMatchForRoom(int roomId) {
         const std::string gName = (g != nullptr) ? g->fullName : ("Guest #" + std::to_string(wl.guestId));
         pushNotice(
             NoticeType::Success,
-            "Waitlist Match Found!",
-            gName + " matches Room " + std::to_string(room->number) + " (" + toString(room->type) + ") — Click [Book Now]",
+            "Waitlist match found",
+            gName + " matches Room " + std::to_string(room->number) + " (" + toString(room->type) + "). Select Book now to confirm.",
             wl.id,
             room->id
         );
@@ -1659,7 +1681,7 @@ int HotelSystem::checkWaitlistMatchForRoom(int roomId) {
 // =============================================================================
 /*
  * Purpose: Returns the promo code table required by Section 9.5:
- *          WELCOME10 (10% room), NUST500 (flat PKR 500), SEECS15 (15% on 3+ nights).
+ *          WELCOME10 (10% room), SAVE500 (flat PKR 500), STAY15 (15% on 3+ nights).
  * Inputs: None.
  * Outputs: Const reference to static vector of PromoCodeRule.
  * Big-O: O(1) time, O(1) space.
@@ -1667,8 +1689,8 @@ int HotelSystem::checkWaitlistMatchForRoom(int roomId) {
 const std::vector<PromoCodeRule>& HotelSystem::promoCodeTable() {
     static const std::vector<PromoCodeRule> kPromos = {
         PromoCodeRule{"WELCOME10", "10% off room subtotal", false, 0.10, 1},
-        PromoCodeRule{"NUST500",   "Flat PKR 500 off",      true,  500.0, 1},
-        PromoCodeRule{"SEECS15",   "15% off room (3+ nights)", false, 0.15, 3}
+        PromoCodeRule{"SAVE500",   "Flat PKR 500 off",      true,  500.0, 1},
+        PromoCodeRule{"STAY15",   "15% off room (3+ nights)", false, 0.15, 3}
     };
     return kPromos;
 }
@@ -1756,7 +1778,7 @@ bool HotelSystem::markInvoicePaid(int invoiceId, const std::string& paymentMetho
     logAudit("INVOICE_PAID", "Marked " + inv->number + " paid via " + inv->paymentMethod);
     m_fileManager.saveInvoices(m_db.invoices);
     m_fileManager.saveAuditLog(m_db.auditLog);
-    pushNotice(NoticeType::Success, "Payment Recorded", inv->number + " marked PAID (" + inv->paymentMethod + ").");
+    pushNotice(NoticeType::Success, "Payment recorded", inv->number + " marked as paid (" + inv->paymentMethod + ").");
     return true;
 }
 
@@ -1806,7 +1828,7 @@ bool HotelSystem::exportInvoiceFiles(
         const std::string borderMid = "+" + std::string(78U, '-') + "+";
 
         txt << borderTop << "\n";
-        txt << formatReceiptCenter80("NUST SEECS GRAND HOTEL & RESIDENCES") << "\n";
+        txt << formatReceiptCenter80(std::string(Cfg::HOTEL_NAME) + ", " + Cfg::HOTEL_TAGLINE) << "\n";
         txt << formatReceiptCenter80("Sector H-12, Islamabad, Pakistan  |  Tel: +92 51 9085 2000") << "\n";
         txt << formatReceiptCenter80("OFFICIAL TAX INVOICE / FOLIO RECEIPT") << "\n";
         txt << borderTop << "\n";
@@ -1864,7 +1886,7 @@ bool HotelSystem::exportInvoiceFiles(
                )
             << "\n";
         txt << borderTop << "\n";
-        txt << formatReceiptCenter80("Thank you for staying with NUST SEECS Grand Hotel!") << "\n";
+        txt << formatReceiptCenter80(std::string("Thank you for staying with ") + Cfg::HOTEL_NAME + ".") << "\n";
         txt << borderTop << "\n";
     }
 
@@ -1877,7 +1899,7 @@ bool HotelSystem::exportInvoiceFiles(
         const std::string qrSeed = sha256Hex(invoice.number + "|" + guestName + "|" + formatPKR(invoice.grandTotal));
 
         html << "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n";
-        html << "<title>Invoice " << htmlEscape(invoice.number) << " — NUST SEECS HMS</title>\n";
+        html << "<title>Invoice " << htmlEscape(invoice.number) << " - " << htmlEscape(Cfg::HOTEL_NAME) << "</title>\n";
         html << "<style>\n"
                 "body{font-family:'Segoe UI',Arial,sans-serif;background:#F4F6FA;color:#1B2233;margin:0;padding:32px;}\n"
                 ".sheet{max-width:820px;margin:0 auto;background:#FFFFFF;border:1px solid #D5DAE6;border-radius:12px;padding:36px;box-shadow:0 12px 32px rgba(11,14,20,0.08);}\n"
@@ -1902,7 +1924,7 @@ bool HotelSystem::exportInvoiceFiles(
 
         html << "<div class=\"header\">\n"
                 "  <div class=\"brand\"><div class=\"logo\">H</div><div>"
-                "<h1 style=\"margin:0;font-size:22px;\">NUST SEECS Grand Hotel</h1>"
+                "<h1 style=\"margin:0;font-size:22px;\">" + htmlEscape(Cfg::HOTEL_NAME) + "</h1>"
                 "<div style=\"color:#66708A;font-size:13px;\">Sector H-12, Islamabad &middot; Official Tax Folio</div>"
                 "</div></div>\n"
                 "  <div style=\"text-align:right;\">"
@@ -2056,12 +2078,12 @@ bool HotelSystem::setManualSurgeOverride(double multiplier, const std::string& r
     logAudit(
         "PRICE_OVERRIDE",
         (multiplier == 0.0)
-            ? ("Cleared manual surge override (" + reason + ")")
-            : ("Set manual surge multiplier to " + std::to_string(multiplier) + "x — Reason: " + reason)
+            ? ("Surge override cleared: " + reason)
+            : ("Surge override set to x" + [&]{ char mb[32]{}; std::snprintf(mb, sizeof(mb), "%.2f", multiplier); return std::string(mb); }() + ": " + reason)
     );
     m_fileManager.saveSettings(m_db.settings);
     m_fileManager.saveAuditLog(m_db.auditLog);
-    pushNotice(NoticeType::Warning, "Pricing Override", "Surge multiplier updated and audit-logged.");
+    pushNotice(NoticeType::Warning, "Pricing override", "Surge multiplier updated and recorded in the audit log.");
     return true;
 }
 
@@ -2150,8 +2172,8 @@ int HotelSystem::dispatchHousekeepingTask(
 
     logAudit(
         "TASK_DISPATCH",
-        std::string(toString(type)) + " task #" + std::to_string(t.id) + " dispatched for Room " +
-            std::to_string(room->number) + (note.empty() ? "" : (" — " + note))
+        std::string(toString(type)) + " task #" + std::to_string(t.id) + " created for Room " +
+            std::to_string(room->number) + (note.empty() ? "" : (": " + note))
     );
     m_fileManager.saveTasks(m_db.tasks);
     m_fileManager.saveRooms(m_db.rooms);
@@ -2175,7 +2197,7 @@ bool HotelSystem::startHousekeepingTask(int taskId) {
             t.status = TaskStatus::InProgress;
             recomputeAllTaskPriorities();
             m_fileManager.saveTasks(m_db.tasks);
-            pushNotice(NoticeType::Info, "Task Started", "Task #" + std::to_string(taskId) + " is now In Progress.");
+            pushNotice(NoticeType::Info, "Task started", "Task #" + std::to_string(taskId) + " is in progress.");
             return true;
         }
     }
@@ -2210,7 +2232,7 @@ bool HotelSystem::completeHousekeepingTask(int taskId) {
             if (room != nullptr && !hasOtherOpenTask && room->status != RoomStatus::Occupied) {
                 room->status = RoomStatus::Available;
                 logAudit("ROOM_STATUS", "Room " + std::to_string(room->number) + " marked Available after task #" + std::to_string(taskId));
-                pushNotice(NoticeType::Success, "Room Ready", "Room " + std::to_string(room->number) + " is now Available.");
+                pushNotice(NoticeType::Success, "Room ready", "Room " + std::to_string(room->number) + " is available again.");
                 checkWaitlistMatchForRoom(room->id);
             }
 
@@ -2367,8 +2389,8 @@ bool HotelSystem::moveServiceOrderStage(int orderId, int newStage) {
                     m_fileManager.saveBookings(m_db.bookings);
                     pushNotice(
                         NoticeType::Success,
-                        "Order Delivered",
-                        o.item + " (" + formatPKR(o.price * o.qty) + ") posted to Booking #" + std::to_string(o.bookingId)
+                        "Order delivered",
+                        o.item + " (" + formatPKR(o.price * o.qty) + ") added to booking BK-" + std::to_string(o.bookingId)
                     );
                 }
             }
@@ -2579,7 +2601,7 @@ bool HotelSystem::runNightAudit(std::string* outReportPath, std::string* outSumm
             return false;
         }
         out << "================================================================================\n";
-        out << "NUST SEECS GRAND HOTEL — NIGHT AUDIT REPORT (" << todayStr << ")\n";
+        out << std::string(Cfg::HOTEL_NAME) + " - NIGHT AUDIT REPORT (" << todayStr << ")\n";
         out << "================================================================================\n";
         out << "Occupied Rooms          : " << occupiedRooms << " / " << m_db.rooms.size()
             << " (" << std::fixed << std::setprecision(1) << occPct << "%)\n";
@@ -2594,19 +2616,19 @@ bool HotelSystem::runNightAudit(std::string* outReportPath, std::string* outSumm
         out << "================================================================================\n";
     }
 
-    logAudit("NIGHT_AUDIT", "Closed business day " + todayStr + " — Revenue: " + formatPKR(totalDayRevenue));
+    logAudit("NIGHT_AUDIT", "Business day " + todayStr + " closed, revenue " + formatPKR(totalDayRevenue));
     saveAll();
 
     std::string snapName;
     m_fileManager.createBackupSnapshot(&snapName);
 
     const std::string summary =
-        "Night Audit " + todayStr + " complete: " + std::to_string(rolledNoShows) + " no-shows rolled, " +
-        std::to_string(unpaidInvoicesCount) + " unpaid invoices flagged, backup " + snapName + " created.";
+        "Night audit for " + todayStr + " complete: " + std::to_string(rolledNoShows) + " no-shows recorded, " +
+        std::to_string(unpaidInvoicesCount) + " unpaid invoices flagged, backup " + snapName + " saved.";
 
     if (outReportPath != nullptr) { *outReportPath = reportPath; }
     if (outSummary != nullptr) { *outSummary = summary; }
-    pushNotice(NoticeType::Success, "Night Audit Complete", summary);
+    pushNotice(NoticeType::Success, "Night audit complete", summary);
     return true;
 }
 
@@ -2630,7 +2652,7 @@ bool HotelSystem::createBackupNow(std::string* outSnapshotName) {
     }
     logAudit("BACKUP_CREATE", "Created manual backup snapshot: " + name);
     m_fileManager.saveAuditLog(m_db.auditLog);
-    pushNotice(NoticeType::Success, "Backup Created", "Snapshot " + name + " saved.");
+    pushNotice(NoticeType::Success, "Backup created", "Backup " + name + " saved.");
     return true;
 }
 
@@ -2665,7 +2687,7 @@ bool HotelSystem::restoreBackup(const std::string& snapshotName, std::string* ou
     logAudit("BACKUP_RESTORE", "Restored database from backup snapshot: " + snapshotName);
     m_lastAuditTamperIndex = verifyAuditLogChain();
     m_fileManager.saveAuditLog(m_db.auditLog);
-    pushNotice(NoticeType::Warning, "Backup Restored", "Database restored from " + snapshotName);
+    pushNotice(NoticeType::Warning, "Backup restored", "Data restored from " + snapshotName);
     return true;
 }
 
@@ -2676,7 +2698,7 @@ bool HotelSystem::restoreBackup(const std::string& snapshotName, std::string* ou
  * Big-O: O(1) time.
  */
 bool HotelSystem::resetCleanState(std::string* outError) {
-    if (!checkPermission(Action::UseVivaTools, "Reset Clean State")) {
+    if (!checkPermission(Action::UseVivaTools, "Reset to Empty System")) {
         if (outError != nullptr) { *outError = "Permission denied"; }
         return false;
     }
@@ -2688,7 +2710,7 @@ bool HotelSystem::resetCleanState(std::string* outError) {
     clearUndoHistory();
     m_lastAuditTamperIndex = verifyAuditLogChain();
     if (ok) {
-        pushNotice(NoticeType::Warning, "Clean State Reset", "Wiped data/ and restored 50 default rooms + 3 users.");
+        pushNotice(NoticeType::Warning, "System reset", "All records were cleared. 50 rooms and 3 staff accounts restored.");
     }
     return ok;
 }
@@ -2701,7 +2723,7 @@ bool HotelSystem::resetCleanState(std::string* outError) {
  * Big-O: O(G + B + T log T + A).
  */
 bool HotelSystem::seedVivaDemoData(std::string* outError) {
-    if (!checkPermission(Action::UseVivaTools, "Seed Viva Demo Data")) {
+    if (!checkPermission(Action::UseVivaTools, "Load Sample Data")) {
         if (outError != nullptr) { *outError = "Permission denied"; }
         return false;
     }
@@ -2716,8 +2738,8 @@ bool HotelSystem::seedVivaDemoData(std::string* outError) {
         updateLastSavedClock();
         pushNotice(
             NoticeType::Success,
-            "Viva Demo Data Seeded",
-            "Loaded 50 rooms, 35 guests, 30-day history (76% occ, 1.10x surge) & 66 chained audit entries."
+            "Sample data loaded",
+            "50 rooms, 38 guests and 90 days of history are ready."
         );
     }
     return ok;
@@ -2822,7 +2844,7 @@ std::vector<SelfTestEntry> HotelSystem::runPhase3SelfTests(bool verboseConsole) 
         g.fullName    = "Hamza Tariq";
         g.cnic        = "61101-1234567-9";
         g.phone       = "+92 300 5551234";
-        g.email       = "hamza.tariq@seecs.edu.pk";
+        g.email       = "hamza.tariq@example.com";
         g.nationality = "Pakistan";
         g.address     = "H-12 Islamabad";
         g.isForeign   = false;

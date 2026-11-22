@@ -12,6 +12,7 @@
 #include "implot.h"
 
 #include <GLFW/glfw3.h>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -43,6 +44,38 @@ void ensureRuntimeDirectories() {
     std::filesystem::create_directories("exports", ec);
 }
 
+/*
+ * Purpose: Draws a 32x32 "G" glyph (rounded accent square, white ring with gap and bar) into a GLFW window icon at runtime.
+ * Inputs: window handle.
+ * Outputs: Sets the window icon; no asset files needed.
+ * Big-O: O(32*32) time, O(1) space.
+ */
+void setWindowIcon(GLFWwindow* window) {
+    constexpr int kSz = 32;
+    static unsigned char pixels[kSz * kSz * 4];
+    for (int y = 0; y < kSz; ++y) {
+        for (int x = 0; x < kSz; ++x) {
+            const float dx = static_cast<float>(x) - 15.5f;
+            const float dy = static_cast<float>(y) - 15.5f;
+            const float r = std::sqrt(dx * dx + dy * dy);
+            const float ang = std::atan2(dy, dx); // 0 = right
+            bool ink = (r >= 8.0f && r <= 12.5f);
+            if (ink && std::fabs(ang) < 0.62f) {
+                ink = false; // opening of the G on the right side
+            }
+            if (!ink && dy >= -1.0f && dy <= 2.5f && dx >= 1.0f && dx <= 12.5f) {
+                ink = true; // horizontal bar of the G
+            }
+            const bool inSquare = !((x < 2 || x > 29) && (y < 2 || y > 29));
+            unsigned char* px = &pixels[(y * kSz + x) * 4];
+            if (!inSquare) { px[0] = px[1] = px[2] = px[3] = 0; continue; }
+            px[0] = ink ? 255 : 0x6C; px[1] = ink ? 255 : 0x8C; px[2] = ink ? 255 : 0xFF; px[3] = 255;
+        }
+    }
+    GLFWimage img{kSz, kSz, pixels};
+    glfwSetWindowIcon(window, 1, &img);
+}
+
 } // namespace
 
 /*
@@ -68,7 +101,7 @@ int main(int argc, char** argv) {
     // Section 11: Run startup self-test in main; exit without opening a window in --selftest CLI mode
     if (selfTestCliMode) {
         std::printf("================================================================================\n");
-        std::printf("NUST_SEECS_HMS — CLI Self-Test Runner (--selftest)\n");
+        std::printf("Grand Meridian HMS - CLI Self-Test Runner (--selftest)\n");
         std::printf("================================================================================\n");
         std::vector<hms::SelfTestEntry> cliResults = hms::runAllSelfTests(true);
         const std::vector<hms::SelfTestEntry> p3Results = hms::HotelSystem::runPhase3SelfTests(true);
@@ -115,7 +148,7 @@ int main(int argc, char** argv) {
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     // Section 2: 1600x900 default, resizable, min 1280x720
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "NUST_SEECS_HMS", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "Grand Meridian Hotel - Management", nullptr, nullptr);
     if (window == nullptr) {
         std::fprintf(stderr, "Failed to create GLFW 1600x900 OpenGL 3.3 window.\n");
         glfwTerminate();
@@ -123,6 +156,7 @@ int main(int argc, char** argv) {
     }
 
     glfwSetWindowSizeLimits(window, 1280, 720, GLFW_DONT_CARE, GLFW_DONT_CARE);
+    setWindowIcon(window);
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // VSync ON
 
@@ -142,7 +176,10 @@ int main(int argc, char** argv) {
 
     hms::ThemeEngine themeEngine;
     themeEngine.initialize(hms::ThemeMode::MidnightObsidian);
-    const hms::FontBank fonts = themeEngine.loadFonts(io);
+    float contentScaleX = 1.0f;
+    float contentScaleY = 1.0f;
+    glfwGetWindowContentScale(window, &contentScaleX, &contentScaleY);
+    const hms::FontBank fonts = themeEngine.loadFonts(io, contentScaleX);
 
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
         std::fprintf(stderr, "Failed to initialize ImGui GLFW backend.\n");

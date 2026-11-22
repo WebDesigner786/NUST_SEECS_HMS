@@ -121,6 +121,10 @@ public:
         return s;
     }
 
+    size_t remaining() const {
+        return m_ok ? (m_size - m_pos) : 0U;
+    }
+
     bool ok() const {
         return m_ok;
     }
@@ -1187,6 +1191,11 @@ bool FileManager::saveSettings(const AppSettings& settings) const {
     w.writeI32(static_cast<int32_t>(settings.nextTaskId));
     w.writeI32(static_cast<int32_t>(settings.nextWaitlistId));
     w.writeI32(static_cast<int32_t>(settings.nextOrderId));
+    w.writeI32(static_cast<int32_t>(settings.textScaleIdx));
+    w.writeBool(settings.welcomeShown);
+    w.writeString(settings.teamName1);
+    w.writeString(settings.teamName2);
+    w.writeString(settings.teamName3);
     return writeAtomicEnvelope(filePath("settings.dat"), 1U, w.buffer());
 }
 
@@ -1221,6 +1230,14 @@ bool FileManager::loadSettings(AppSettings& outSettings, std::string* outError) 
     s.nextTaskId          = r.readI32();
     s.nextWaitlistId      = r.readI32();
     s.nextOrderId         = r.readI32();
+    if (r.ok() && r.remaining() > 0U) { // interface preferences (added later; absent in older files)
+        s.textScaleIdx = r.readI32();
+        s.welcomeShown = r.readBool();
+        s.teamName1    = r.readString();
+        s.teamName2    = r.readString();
+        s.teamName3    = r.readString();
+        if (s.textScaleIdx < 0 || s.textScaleIdx > 3) { s.textScaleIdx = 1; }
+    }
     if (!r.ok()) {
         if (outError != nullptr) {
             *outError = "Malformed record payload in settings.dat";
@@ -1645,14 +1662,23 @@ bool FileManager::resetCleanState(HotelDatabase& db, int actorUserId, const std:
     db.waitlist.clear();
     db.orders.clear();
     db.stats.clear();
-    db.settings = AppSettings{};
+    {
+        const AppSettings prev = db.settings;
+        db.settings = AppSettings{};
+        db.settings.themeChoice   = prev.themeChoice;
+        db.settings.textScaleIdx  = prev.textScaleIdx;
+        db.settings.teamName1     = prev.teamName1;
+        db.settings.teamName2     = prev.teamName2;
+        db.settings.teamName3     = prev.teamName3;
+        db.settings.welcomeShown  = true;
+    }
 
     appendAuditEntry(
         db.auditLog,
         actorUserId,
         actorUsername,
         "RESET_CLEAN_STATE",
-        "Initialized clean hotel state with 50 rooms and 3 default staff accounts"
+        "System reset to empty: 50 rooms and 3 default staff accounts"
     );
 
     return saveAll(db);
@@ -1673,6 +1699,7 @@ bool FileManager::resetCleanState(HotelDatabase& db, int actorUserId, const std:
  * Big-O: O(1) bounded deterministic dataset generation.
  */
 bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::string& actorUsername) const {
+    constexpr int kSeedGuestCount = 38;
     ensureDirectories();
     createBackupSnapshot(); // Section 10: backup first
 
@@ -1689,10 +1716,19 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
     db.waitlist.clear();
     db.orders.clear();
     db.stats.clear();
-    db.settings = AppSettings{};
+    {
+        const AppSettings prev = db.settings;
+        db.settings = AppSettings{};
+        db.settings.themeChoice   = prev.themeChoice;
+        db.settings.textScaleIdx  = prev.textScaleIdx;
+        db.settings.teamName1     = prev.teamName1;
+        db.settings.teamName2     = prev.teamName2;
+        db.settings.teamName3     = prev.teamName3;
+        db.settings.welcomeShown  = true;
+    }
 
     // -------------------------------------------------------------------------
-    // 1. 35 Guests: 22 Pakistani + 13 International (Section 10)
+    // 1. 38 Guests: 22 Pakistani + 13 International (Section 10)
     // -------------------------------------------------------------------------
     struct GuestSeed {
         const char* name;
@@ -1707,7 +1743,7 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         double      spend;
     };
 
-    const GuestSeed guestSeeds[35] = {
+    const GuestSeed guestSeeds[kSeedGuestCount] = {
         // 3 Platinum
         {"Tariq Mehmood Cheema",   "35202-4182930-1", "0300-8412233", "tariq.cheema@lums.edu.pk",    "Pakistan", "DHA Phase 5, Lahore",        false, LoyaltyTier::Platinum, 34, 1850000.0},
         {"Dr. Saima Afridi",       "17301-9283746-2", "0333-9123456", "saima.afridi@kmu.edu.pk",     "Pakistan", "Hayatabad, Peshawar",        false, LoyaltyTier::Platinum, 31, 1620000.0},
@@ -1746,10 +1782,14 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         {"Aisha Al-Maktoum",       "AE5519283",       "+971-55-9910", "aisha.maktoum@difc.ae",       "UAE",      "Downtown Dubai, UAE",        true,  LoyaltyTier::Standard, 3,  128000.0},
         {"Daniel Brooks",          "US9928374",       "+1-415-55599", "d.brooks@stanford.edu",       "USA",      "Palo Alto, California",      true,  LoyaltyTier::Standard, 2,  94000.0},
         {"Zeynep Kaya",            "TR4481920",       "+90-533-7741", "zeynep.kaya@ankara.edu.tr",   "Turkey",   "Cankaya, Ankara",            true,  LoyaltyTier::Standard, 1,  41000.0},
-        {"Hannah Mueller",         "DE6619284",       "+49-151-4432", "hannah.mueller@berlin.de",    "Germany",  "Mitte, Berlin",              true,  LoyaltyTier::Standard, 2,  65000.0}
+        {"Hannah Mueller",         "DE6619284",       "+49-151-4432", "hannah.mueller@berlin.de",    "Germany",  "Mitte, Berlin",              true,  LoyaltyTier::Standard, 2,  65000.0},
+        // 3 extra Standard guests so that every active booking today belongs to a different guest
+        {"Rabia Anwar Chaudhry",   "33100-2299881-4", "0307-1928374", "rabia.chaudhry@faisalabad.pk", "Pakistan", "Peoples Colony, Faisalabad", false, LoyaltyTier::Standard, 1,  30000.0},
+        {"Shahid Iqbal Awan",      "38403-5566201-7", "0320-5647382", "shahid.awan@sargodha.pk",      "Pakistan", "Satellite Town, Sargodha",  false, LoyaltyTier::Standard, 2,  57000.0},
+        {"Maheen Rauf Dar",        "61101-7788204-0", "0347-8273645", "maheen.dar@islamabad.pk",      "Pakistan", "Sector G-10/3, Islamabad",  false, LoyaltyTier::Standard, 1,  26000.0}
     };
 
-    for (int i = 0; i < 35; ++i) {
+    for (int i = 0; i < kSeedGuestCount; ++i) {
         const GuestSeed& gs = guestSeeds[i];
         Guest g{};
         g.id              = i + 1;
@@ -1768,13 +1808,30 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         g.preferencesNote = (gs.tier == LoyaltyTier::Platinum) ? "VIP high-floor quiet room" : "Standard hospitality";
         db.guests.push_back(g);
     }
-    db.settings.nextGuestId = 36;
+    db.settings.nextGuestId = kSeedGuestCount + 1;
 
     // -------------------------------------------------------------------------
     // 2. 30 Days of History (DailyStat rows + Historical Bookings & Invoices ~PKR 5.4M)
     // -------------------------------------------------------------------------
     int nextBookingId = 1;
     int nextInvoiceId = 1001;
+
+    // Days 89..30 before today: statistics only (gentle upward trend, weekend peaks) so the 90-day heatmap is full
+    for (int dOff = 89; dOff >= 30; --dOff) {
+        const int32_t dayNum = today - dOff;
+        const bool wknd = DateUtil::isWeekendNight(dayNum);
+        const double trend = 50.0 + static_cast<double>(89 - dOff) * 0.10; // 50% -> ~56%
+        const double occPct = std::clamp(trend + (wknd ? 15.0 : 0.0) + static_cast<double>((dOff * 7) % 5) * 1.6, 38.0, 92.0);
+        const int occRooms = static_cast<int>(std::llround((occPct / 100.0) * 50.0));
+        const double avgRate = wknd ? 15600.0 : 13200.0;
+        DailyStat st{};
+        st.day          = dayNum;
+        st.occupancyPct = occPct;
+        st.revenue      = std::llround((static_cast<double>(occRooms) * avgRate * 0.34) / 10.0) * 10.0;
+        st.checkins     = 3 + (dOff % 5);
+        st.checkouts    = 3 + ((dOff + 2) % 4);
+        db.stats.push_back(st);
+    }
 
     for (int dOff = 29; dOff >= 1; --dOff) {
         const int32_t dayNum = today - dOff;
@@ -1795,7 +1852,7 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
 
         // Create 2 historical checked-out bookings + invoices per day so Billings & Analytics are richly populated
         for (int k = 0; k < 2; ++k) {
-            const int gIdx = (dOff * 3 + k * 7) % 35;
+            const int gIdx = (dOff * 3 + k * 7) % kSeedGuestCount;
             const int rIdx = (dOff * 5 + k * 13) % 50;
             const Room& rm = db.rooms[static_cast<std::size_t>(rIdx)];
             const Guest& gu = db.guests[static_cast<std::size_t>(gIdx)];
@@ -1860,7 +1917,7 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
     // Rooms 0..31 -> Occupied (32 rooms; rooms 0..4 depart today = 5 departures today)
     for (int i = 0; i < 32; ++i) {
         Room& rm = db.rooms[static_cast<std::size_t>(i)];
-        const Guest& gu = db.guests[static_cast<std::size_t>(i % 35)];
+        const Guest& gu = db.guests[static_cast<std::size_t>(i % kSeedGuestCount)];
         Booking bk{};
         bk.id              = nextBookingId++;
         bk.guestId         = gu.id;
@@ -1887,7 +1944,7 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
     // Rooms 32..37 -> 6 Reserved arrivals today
     for (int i = 32; i < 38; ++i) {
         Room& rm = db.rooms[static_cast<std::size_t>(i)];
-        const Guest& gu = db.guests[static_cast<std::size_t>((i - 30) % 35)];
+        const Guest& gu = db.guests[static_cast<std::size_t>(i % kSeedGuestCount)];
         Booking bk{};
         bk.id              = nextBookingId++;
         bk.guestId         = gu.id;
@@ -1905,6 +1962,42 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         db.bookings.push_back(bk);
         rm.status = RoomStatus::Reserved;
         rm.currentBookingId = bk.id;
+    }
+
+    // Guarantee that no guest holds two overlapping bookings: re-assign any conflicting historical booking
+    // (back-to-back stays where one checks out the day the next arrives are NOT overlapping).
+    {
+        const auto overlaps = [](const Booking& a, const Booking& b) {
+            return a.checkInDay < b.checkOutDay && b.checkInDay < a.checkOutDay;
+        };
+        for (Booking& bk : db.bookings) {
+            if (bk.status != BookingStatus::CheckedOut) {
+                continue;
+            }
+            const auto conflicts = [&](int gid) {
+                for (const Booking& other : db.bookings) {
+                    if (&other != &bk && other.guestId == gid && overlaps(bk, other)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            if (!conflicts(bk.guestId)) {
+                continue;
+            }
+            for (int step = 1; step <= kSeedGuestCount; ++step) {
+                const int cand = ((bk.guestId - 1 + step) % kSeedGuestCount) + 1;
+                if (!conflicts(cand)) {
+                    bk.guestId = cand;
+                    for (Invoice& inv : db.invoices) {
+                        if (inv.id == bk.invoiceId) {
+                            inv.guestId = cand;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
     }
 
     // Today's DailyStat row (76% occupancy)
@@ -1968,22 +2061,99 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
     // -------------------------------------------------------------------------
     // 4. >= 65 Valid, Cryptographically Chained SHA-256 Audit Log Entries
     // -------------------------------------------------------------------------
-    const char* auditActions[6] = {
-        "LOGIN", "BOOKING_CREATE", "CHECK_IN", "CHECK_OUT", "ROOM_STATUS", "PRICE_OVERRIDE"
-    };
-    for (int i = 0; i < 65; ++i) {
-        const char* act = auditActions[i % 6];
-        const int uid = (i % 3) + 1;
-        const char* uname = (uid == 1) ? "admin" : ((uid == 2) ? "reception" : "housekeeping");
-        const std::string det = "Historical operation #" + std::to_string(i + 1) + " verified in SHA-256 chain";
-        appendAuditEntry(db.auditLog, uid, uname, act, det, baseTs + static_cast<long long>(i) * 36000LL);
+    {
+        const std::time_t nowT = std::time(nullptr);
+        const std::tm* ltm = std::localtime(&nowT);
+        const long long secSinceMidnight = (ltm != nullptr) ? (ltm->tm_hour * 3600 + ltm->tm_min * 60 + ltm->tm_sec) : 0;
+        const long long midnightTs = static_cast<long long>(nowT) - secSinceMidnight;
+
+        const auto roomNumberOf = [&](int roomId) {
+            for (const Room& r : db.rooms) {
+                if (r.id == roomId) {
+                    return r.number;
+                }
+            }
+            return 101;
+        };
+        const auto guestNameOf = [&](int guestId) -> std::string {
+            for (const Guest& g : db.guests) {
+                if (g.id == guestId) {
+                    return g.fullName;
+                }
+            }
+            return "Guest";
+        };
+
+        const char* maintIssues[5] = {
+            "AC not cooling", "Bathroom tap leaking", "TV remote and set-top box fault",
+            "Door lock battery low", "Water heater not reaching temperature"
+        };
+        const char* overrideNotes[5] = {
+            "Friday evening demand", "Corporate conference in town", "Wedding season weekend",
+            "Last-minute cancellations, easing rate", "Cricket match weekend demand"
+        };
+        const double overrideMults[5] = {1.15, 1.20, 1.25, 1.00, 1.15};
+        const std::size_t histCount = static_cast<std::size_t>(std::max<std::size_t>(1U, db.invoices.size()));
+
+        for (int i = 0; i < 65; ++i) {
+            const int dayIdx = (i * 28) / 65;                    // 0..27 days ago window, ~2-3 entries per day
+            const int firstOfDay = (dayIdx * 65 + 27) / 28;
+            const int slot = i - firstOfDay;                      // 0..2 within the day, keeps timestamps monotonic
+            const long long ts = midnightTs - static_cast<long long>(29 - dayIdx) * 86400LL +
+                                 static_cast<long long>(9 + slot * 4) * 3600LL + static_cast<long long>((i * 7) % 50) * 60LL;
+
+            const std::size_t bIdx = (static_cast<std::size_t>(i) * 7U) % histCount;
+            const Invoice& inv = db.invoices[bIdx];
+            const Booking* bk = nullptr;
+            for (const Booking& b : db.bookings) {
+                if (b.id == inv.bookingId) {
+                    bk = &b;
+                    break;
+                }
+            }
+            const int roomNum = (bk != nullptr) ? roomNumberOf(bk->roomId) : (101 + (i % 50));
+            const std::string guestName = (bk != nullptr) ? guestNameOf(bk->guestId) : std::string("Guest");
+            const int nights = (bk != nullptr) ? std::max(1, bk->checkOutDay - bk->checkInDay) : 2;
+            const int bkId = (bk != nullptr) ? bk->id : 1;
+
+            int uid = 2;
+            const char* uname = "reception";
+            std::string act;
+            std::string det;
+            switch (i % 13) {
+                case 0:  uid = 2; uname = "reception";    act = "LOGIN";           det = "User signed in (Receptionist)"; break;
+                case 1:  uid = 2; uname = "reception";    act = "BOOKING_CREATE";  det = "Booking BK-" + std::to_string(bkId) + " created for " + guestName + ", " + std::to_string(nights) + " nights, Room " + std::to_string(roomNum); break;
+                case 2:  uid = 2; uname = "reception";    act = "CHECK_IN";        det = guestName + " checked in to Room " + std::to_string(roomNum) + " (BK-" + std::to_string(bkId) + ")"; break;
+                case 3:  uid = 3; uname = "housekeeping"; act = "LOGIN";           det = "User signed in (Housekeeping)"; break;
+                case 4:  uid = 3; uname = "housekeeping"; act = "ROOM_STATUS";     det = "Room " + std::to_string(roomNum) + " cleaned and marked available"; break;
+                case 5:  uid = 2; uname = "reception";    act = "CHECK_OUT";       det = "Room " + std::to_string(roomNum) + " checked out, " + inv.number + " issued (" + formatPKR(inv.grandTotal) + ")"; break;
+                case 6:  uid = 1; uname = "admin";        act = "LOGIN";           det = "User signed in (Admin)"; break;
+                case 7:  uid = 3; uname = "housekeeping"; act = "ROOM_STATUS";     det = "Room " + std::to_string(roomNum) + " flagged for maintenance: " + maintIssues[(i / 13) % 5]; break;
+                case 8:  uid = 2; uname = "reception";    act = "INVOICE_PAID";    det = inv.number + " marked as paid by " + (((i / 13) % 2 == 0) ? "card" : "bank transfer"); break;
+                case 9:  uid = 1; uname = "admin";        act = "PRICE_OVERRIDE";  {
+                    const double m = overrideMults[(i / 13) % 5];
+                    char mb[48]{};
+                    std::snprintf(mb, sizeof(mb), "%.2f", m);
+                    det = (m <= 1.0) ? std::string("Surge override cleared: ") + overrideNotes[(i / 13) % 5]
+                                     : std::string("Surge override set to x") + mb + ": " + overrideNotes[(i / 13) % 5];
+                    break;
+                }
+                case 10: uid = 2; uname = "reception";    act = "GUEST_REGISTER";  det = "Registered guest #" + std::to_string((bk != nullptr) ? bk->guestId : 1) + " (" + guestName + ")"; break;
+                case 11: uid = 3; uname = "housekeeping"; act = "ROOM_STATUS";     det = "Room " + std::to_string(roomNum) + " marked available after cleaning task #" + std::to_string(1 + (i % 11)); break;
+                default: uid = 1; uname = "admin";
+                    if ((i / 13) % 2 == 0) { act = "NIGHT_AUDIT"; det = "Business day closed, revenue " + formatPKR(inv.grandTotal * 6.0); }
+                    else                   { act = "BACKUP_CREATE"; det = "Manual backup snapshot created"; }
+                    break;
+            }
+            appendAuditEntry(db.auditLog, uid, uname, act, det, ts);
+        }
     }
     appendAuditEntry(
         db.auditLog,
         actorUserId,
         actorUsername,
         "SEED_VIVA_DATA",
-        "Seeded 50 rooms, 35 guests, 30-day history, 11 heap tasks, 4 orders, 2 waitlist entries & 66 audit links"
+        "Sample data loaded: 50 rooms, 38 guests, 90 days of history, 11 housekeeping tasks, 4 service orders, 2 waitlist entries"
     );
 
     db.settings.nextBookingId  = nextBookingId;

@@ -965,9 +965,14 @@ YieldPricingResult computeYieldPricing(
 }
 
 /*
- * Purpose: Simulates expected demand D = D0 * (surge)^epsilon and expected revenue R = price * D
- *          across surge multipliers in [1.00 .. 1.60] (step 0.01) for the Admin Pricing Simulator.
- * Inputs: baseReferencePrice, baseDemandD0, elasticityEpsilon, outOptimalSurge, outMaxRevenue.
+ * Purpose: Capacity-aware yield simulation. For each surge multiplier s in [1.00 .. 1.60] (step 0.01):
+ *            D(s) = min(TOTAL_ROOMS, D0 * s^epsilon)      (latent demand D0 = occupancy * TOTAL_ROOMS * 1.35,
+ *                                                           see latentDemandForOccupancy())
+ *            R(s) = roundTo10(base * s) * D(s)
+ *          While latent demand exceeds capacity, raising the price costs no bookings so revenue rises;
+ *          once demand drops below capacity revenue falls, giving a genuine revenue-maximising multiplier.
+ *          If demand is already below capacity at s = 1.00 the optimum is 1.00 (no surge needed).
+ * Inputs: baseReferencePrice, baseDemandD0 (latent demand at s = 1.00), elasticityEpsilon, outOptimalSurge, outMaxRevenue.
  * Outputs: Vector of 61 YieldCurvePoint samples and highlights the revenue-maximizing multiplier.
  * Big-O: O(S) where S = 61 curve points, i.e., O(1).
  */
@@ -987,7 +992,7 @@ std::vector<YieldCurvePoint> simulateYieldCurve(
     for (int step = 0; step <= 60; ++step) {
         const double s = 1.00 + static_cast<double>(step) * 0.01;
         const double price = roundToNearest10PKR(baseReferencePrice * s);
-        const double demand = std::clamp(baseDemandD0 * std::pow(s, elasticityEpsilon), 0.0, static_cast<double>(Cfg::TOTAL_ROOMS));
+        const double demand = std::min(static_cast<double>(Cfg::TOTAL_ROOMS), std::max(0.0, baseDemandD0 * std::pow(s, elasticityEpsilon)));
         const double revenue = price * demand;
 
         curve.push_back(YieldCurvePoint{s, demand, revenue});
@@ -1673,6 +1678,16 @@ std::vector<SelfTestEntry> runAllSelfTests(bool verboseConsole) {
         }
     };
 
+    // Yield simulator: revenue-maximising surge must exceed 1.00 at 90% occupancy and equal 1.00 at 40% occupancy
+    {
+        double optHigh = 1.0, revHigh = 0.0, optLow = 1.0, revLow = 0.0;
+        simulateYieldCurve(Cfg::RATE_DELUXE, latentDemandForOccupancy(0.90), -1.2, optHigh, revHigh);
+        simulateYieldCurve(Cfg::RATE_DELUXE, latentDemandForOccupancy(0.40), -1.2, optLow, revLow);
+        char det[160]{};
+        std::snprintf(det, sizeof(det), "Optimal surge x%.2f at 90%% occupancy (must be > 1.00), x%.2f at 40%% (must be 1.00)", optHigh, optLow);
+        recordCheck("Yield simulator capacity optimum", optHigh > 1.0 + 1e-9 && std::fabs(optLow - 1.0) < 1e-9, det);
+    }
+
     // 6. MergeSort & QuickSort vs std::sort on 1,000 random ints
     {
         std::mt19937 rng(20261118U);
@@ -1844,7 +1859,7 @@ std::vector<SelfTestEntry> runAllSelfTests(bool verboseConsole) {
         // Known folio: 4 nights Deluxe (12,500 * 1.10 surge = 13,750/night) -> roomSubtotal = 55,000 PKR
         // Add-ons: 2 x 1,500 Dining = 3,000 PKR
         // Gold Tier (10% room): loyaltyDiscount = 5,500 PKR
-        // Promo SEECS15 (15% on 3+ nights room): promoDiscount = 8,250 PKR
+        // Promo STAY15 (15% on 3+ nights room): promoDiscount = 8,250 PKR
         // taxable = 55,000 + 3,000 - 5,500 - 8,250 = 44,250 PKR
         // tax (16%) = 44,250 * 0.16 = 7,080 PKR
         // grandTotal = 44,250 + 7,080 = 51,330 PKR

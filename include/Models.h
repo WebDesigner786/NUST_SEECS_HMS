@@ -14,6 +14,9 @@ namespace hms {
 // 1. CONFIGURATION CONSTANTS (Section 4 & Section 9.4/9.5)
 // =============================================================================
 namespace Cfg {
+    constexpr const char* HOTEL_NAME    = "Grand Meridian Hotel";
+    constexpr const char* HOTEL_TAGLINE = "Islamabad";
+    constexpr const char* APP_VERSION   = "1.0.0";
     constexpr double TAX_RATE          = 0.16;
     constexpr double SURGE_T1          = 0.70;
     constexpr double SURGE_T2          = 0.85;
@@ -597,6 +600,13 @@ struct AppSettings {
     int    nextWaitlistId      = 1;
     int    nextOrderId         = 1;
 
+    // Interface preferences and first-run state (appended to settings.dat; older files simply keep defaults)
+    int         textScaleIdx   = 1;     // 0 = 90%, 1 = 100%, 2 = 115%, 3 = 130%
+    bool        welcomeShown   = false; // first-launch "sample data or empty system" dialog already answered
+    std::string teamName1      = "";
+    std::string teamName2      = "";
+    std::string teamName3      = "";
+
     bool operator==(const AppSettings& o) const {
         return themeChoice == o.themeChoice &&
                std::abs(taxRate - o.taxRate) < 1e-6 &&
@@ -608,7 +618,12 @@ struct AppSettings {
                nextUserId == o.nextUserId &&
                nextTaskId == o.nextTaskId &&
                nextWaitlistId == o.nextWaitlistId &&
-               nextOrderId == o.nextOrderId;
+               nextOrderId == o.nextOrderId &&
+               textScaleIdx == o.textScaleIdx &&
+               welcomeShown == o.welcomeShown &&
+               teamName1 == o.teamName1 &&
+               teamName2 == o.teamName2 &&
+               teamName3 == o.teamName3;
     }
 };
 
@@ -702,6 +717,21 @@ namespace DateUtil {
         fromDayNumber(dayNumber, y, m, d);
         char buf[32]{};
         std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d", y, m, d);
+        return std::string(buf);
+    }
+
+    /*
+     * Purpose: Formats a dayNumber for display in the UI as "21 Nov 2026" (files keep ISO-8601).
+     * Inputs: dayNumber (days since 2000-01-01).
+     * Outputs: Formatted std::string "D Mon YYYY".
+     * Big-O: O(1) time, O(1) space.
+     */
+    inline std::string formatDateUI(int32_t dayNumber) {
+        static const char* kMonths[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        int y = 2000, m = 1, d = 1;
+        fromDayNumber(dayNumber, y, m, d);
+        char buf[32]{};
+        std::snprintf(buf, sizeof(buf), "%d %s %04d", d, kMonths[(m >= 1 && m <= 12) ? m - 1 : 0], y);
         return std::string(buf);
     }
 

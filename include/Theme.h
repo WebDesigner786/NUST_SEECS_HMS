@@ -64,8 +64,8 @@ public:
     // Advances the 250ms color lerp each frame and writes to ImGui::GetStyle()
     void update(float deltaTimeSeconds);
 
-    // Loads 17px body, 28px heading, and 12px caption fonts from system font paths with fallback
-    FontBank loadFonts(ImGuiIO& io);
+    // Loads 19px body, 30px heading, and 15px caption (times content scale) fonts from system font paths with fallback
+    FontBank loadFonts(ImGuiIO& io, float contentScale = 1.0f);
 
     ThemeMode getCurrentMode() const;
     const char* getCurrentModeName() const;

@@ -1328,7 +1328,7 @@ void GuiRenderer::drawBadge(const char* text, const ImVec4& bgColor, const ImVec
     if (m_fonts.captionFont != nullptr) {
         ImGui::PushFont(m_fonts.captionFont);
     }
-    const ImVec2 tSz = ImGui::CalcTextSize(text);
+    const ImVec2 tSz = visibleTextSize(text);
     const ImVec2 pad(9.0f, 3.0f);
     const ImVec2 pillSz(tSz.x + pad.x * 2.0f, tSz.y + pad.y * 2.0f);
     const ImVec2 pos = ImGui::GetCursorScreenPos();
@@ -1348,7 +1348,7 @@ void GuiRenderer::drawBadge(const char* text, const ImVec4& bgColor, const ImVec
         0,
         1.0f
     );
-    dl->AddText(ImVec2(pos.x + pad.x, pos.y + pad.y), ThemeEngine::vec4ToU32(textColor), text);
+    dl->AddText(ImVec2(pos.x + pad.x, pos.y + pad.y), ThemeEngine::vec4ToU32(textColor), text, visibleLabelEnd(text));
     ImGui::Dummy(pillSz);
 
     if (m_fonts.captionFont != nullptr) {
@@ -1397,8 +1397,8 @@ void GuiRenderer::drawProgressRing(
     }
 
     if (centerText != nullptr) {
-        const ImVec2 tSz = ImGui::CalcTextSize(centerText);
-        dl->AddText(ImVec2(center.x - tSz.x * 0.5f, center.y - tSz.y * 0.5f), ThemeEngine::vec4ToU32(pal.text), centerText);
+        const ImVec2 tSz = visibleTextSize(centerText);
+        dl->AddText(ImVec2(center.x - tSz.x * 0.5f, center.y - tSz.y * 0.5f), ThemeEngine::vec4ToU32(pal.text), centerText, visibleLabelEnd(centerText));
     }
     ImGui::Dummy(ImVec2(radius * 2.0f + 8.0f, radius * 2.0f + 8.0f));
 }
@@ -1411,7 +1411,7 @@ void GuiRenderer::drawProgressRing(
  */
 bool GuiRenderer::primaryButton(const char* label, const ImVec2& size, bool enabled) {
     const ThemePalette& pal = m_theme.getActivePalette();
-    const ImVec2 textSz = ImGui::CalcTextSize(label);
+    const ImVec2 textSz = visibleTextSize(label);
     const ImVec2 btnSz(
         (size.x < 0.0f) ? ImGui::GetContentRegionAvail().x : ((size.x == 0.0f) ? (textSz.x + 28.0f) : size.x),
         (size.y <= 0.0f) ? 36.0f : size.y
@@ -1445,7 +1445,8 @@ bool GuiRenderer::primaryButton(const char* label, const ImVec2& size, bool enab
     dl->AddText(
         ImVec2(pos.x + (btnSz.x - textSz.x) * 0.5f, pos.y + liftY + (btnSz.y - textSz.y) * 0.5f),
         ThemeEngine::vec4ToU32(txtCol),
-        label
+        label,
+        visibleLabelEnd(label)
     );
     return clicked;
 }
@@ -1458,7 +1459,7 @@ bool GuiRenderer::primaryButton(const char* label, const ImVec2& size, bool enab
  */
 bool GuiRenderer::ghostButton(const char* label, const ImVec2& size, bool enabled) {
     const ThemePalette& pal = m_theme.getActivePalette();
-    const ImVec2 textSz = ImGui::CalcTextSize(label);
+    const ImVec2 textSz = visibleTextSize(label);
     const ImVec2 btnSz(
         (size.x < 0.0f) ? ImGui::GetContentRegionAvail().x : ((size.x == 0.0f) ? (textSz.x + 24.0f) : size.x),
         (size.y <= 0.0f) ? 34.0f : size.y
@@ -1492,7 +1493,8 @@ bool GuiRenderer::ghostButton(const char* label, const ImVec2& size, bool enable
     dl->AddText(
         ImVec2(pos.x + (btnSz.x - textSz.x) * 0.5f, pos.y + liftY + (btnSz.y - textSz.y) * 0.5f),
         ThemeEngine::vec4ToU32(enabled ? pal.text : pal.dimText),
-        label
+        label,
+        visibleLabelEnd(label)
     );
     return clicked;
 }
@@ -1505,7 +1507,7 @@ bool GuiRenderer::ghostButton(const char* label, const ImVec2& size, bool enable
  */
 bool GuiRenderer::dangerButton(const char* label, const ImVec2& size, bool enabled) {
     const ThemePalette& pal = m_theme.getActivePalette();
-    const ImVec2 textSz = ImGui::CalcTextSize(label);
+    const ImVec2 textSz = visibleTextSize(label);
     const ImVec2 btnSz(
         (size.x < 0.0f) ? ImGui::GetContentRegionAvail().x : ((size.x == 0.0f) ? (textSz.x + 24.0f) : size.x),
         (size.y <= 0.0f) ? 34.0f : size.y
@@ -1539,7 +1541,8 @@ bool GuiRenderer::dangerButton(const char* label, const ImVec2& size, bool enabl
     dl->AddText(
         ImVec2(pos.x + (btnSz.x - textSz.x) * 0.5f, pos.y + liftY + (btnSz.y - textSz.y) * 0.5f),
         ThemeEngine::vec4ToU32(enabled ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : pal.dimText),
-        label
+        label,
+        visibleLabelEnd(label)
     );
     return clicked;
 }
