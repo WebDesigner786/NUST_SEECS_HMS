@@ -554,14 +554,15 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
             m_theme.toggleTheme();
         }
 
-        // Centered 460x560 glass-style card
+        // Centered 460px-wide auto-height glass-style card (no internal scrollbar, buttons never cut off)
         constexpr float kCardW = 460.0f;
-        constexpr float kCardH = 560.0f;
+        static float sLoginCardH = 600.0f;
+        const float cardH = std::min(sLoginCardH, std::max(400.0f, vp->Size.y - 40.0f));
         const ImVec2 cardMin(
             vp->Pos.x + (vp->Size.x - kCardW) * 0.5f,
-            vp->Pos.y + (vp->Size.y - kCardH) * 0.5f
+            vp->Pos.y + std::max(20.0f, (vp->Size.y - cardH) * 0.5f)
         );
-        const ImVec2 cardMax(cardMin.x + kCardW, cardMin.y + kCardH);
+        const ImVec2 cardMax(cardMin.x + kCardW, cardMin.y + cardH);
 
         // Drop shadow + translucent glass surface
         dl->AddRectFilled(
@@ -588,7 +589,12 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
         dl->AddLine(ImVec2(logoCenter.x - 11.0f, logoCenter.y), ImVec2(logoCenter.x + 11.0f, logoCenter.y), IM_COL32(255, 255, 255, 255), 4.5f);
 
         ImGui::SetCursorScreenPos(ImVec2(cardMin.x + 36.0f, cardMin.y + 112.0f));
-        ImGui::BeginChild("##LoginCardBody", ImVec2(kCardW - 72.0f, kCardH - 132.0f), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground);
+        ImGui::BeginChild(
+            "##LoginCardBody",
+            ImVec2(kCardW - 72.0f, 0.0f),
+            ImGuiChildFlags_AutoResizeY,
+            ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+        );
 
         if (m_fonts.headingFont != nullptr) {
             ImGui::PushFont(m_fonts.headingFont);
@@ -673,26 +679,27 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
         }
         ImGui::Spacing();
 
-        const float chipW = (ImGui::GetContentRegionAvail().x - 20.0f) / 3.0f;
-        if (ghostButton("Admin", ImVec2(chipW, 32.0f))) {
+        const float chipW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
+        if (ghostButton("Admin", ImVec2(chipW, 34.0f))) {
             std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "admin");
             std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Admin@123");
             m_loginErrorMsg.clear();
         }
         ImGui::SameLine();
-        if (ghostButton("Reception", ImVec2(chipW, 32.0f))) {
+        if (ghostButton("Reception", ImVec2(chipW, 34.0f))) {
             std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "reception");
             std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Desk@123");
             m_loginErrorMsg.clear();
         }
         ImGui::SameLine();
-        if (ghostButton("Housekeep", ImVec2(chipW, 32.0f))) {
+        if (ghostButton("Housekeep", ImVec2(chipW, 34.0f))) {
             std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "housekeeping");
             std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Clean@123");
             m_loginErrorMsg.clear();
         }
 
         ImGui::EndChild();
+        sLoginCardH = 112.0f + ImGui::GetItemRectSize().y + 24.0f;
     }
     ImGui::End();
     ImGui::PopStyleVar(3);
@@ -1178,36 +1185,42 @@ void GuiRenderer::renderUpcomingModulePreview(ScreenId screen) {
  * Outputs: Returns true if child region is visible (always pair with endCard()).
  * Big-O: O(1) time, O(1) space.
  */
-bool GuiRenderer::beginCard(const char* id, const char* title, const ImVec2& size) {
+bool GuiRenderer::beginCard(const char* id, const char* title, const ImVec2& size, bool autoHeight) {
     const ThemePalette& pal = m_theme.getActivePalette();
     const ImVec2 pos = ImGui::GetCursorScreenPos();
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const ImVec2 actualSize(
         (size.x <= 0.0f) ? avail.x : size.x,
-        (size.y <= 0.0f) ? avail.y : size.y
+        autoHeight ? 0.0f : ((size.y <= 0.0f) ? avail.y : size.y)
     );
 
-    ImDrawList* parentDl = ImGui::GetWindowDrawList();
-    // 2 offset translucent drop-shadow rects
-    parentDl->AddRectFilled(
-        ImVec2(pos.x + 2.0f, pos.y + 4.0f),
-        ImVec2(pos.x + actualSize.x + 2.0f, pos.y + actualSize.y + 4.0f),
-        IM_COL32(0, 0, 0, 26),
-        10.0f
-    );
-    parentDl->AddRectFilled(
-        ImVec2(pos.x + 4.0f, pos.y + 8.0f),
-        ImVec2(pos.x + actualSize.x + 4.0f, pos.y + actualSize.y + 8.0f),
-        IM_COL32(0, 0, 0, 14),
-        12.0f
-    );
+    if (!autoHeight && actualSize.y > 0.0f) {
+        ImDrawList* parentDl = ImGui::GetWindowDrawList();
+        // 2 offset translucent drop-shadow rects
+        parentDl->AddRectFilled(
+            ImVec2(pos.x + 2.0f, pos.y + 4.0f),
+            ImVec2(pos.x + actualSize.x + 2.0f, pos.y + actualSize.y + 4.0f),
+            IM_COL32(0, 0, 0, 26),
+            10.0f
+        );
+        parentDl->AddRectFilled(
+            ImVec2(pos.x + 4.0f, pos.y + 8.0f),
+            ImVec2(pos.x + actualSize.x + 4.0f, pos.y + actualSize.y + 8.0f),
+            IM_COL32(0, 0, 0, 14),
+            12.0f
+        );
+    }
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, pal.panel);
     ImGui::PushStyleColor(ImGuiCol_Border, pal.border);
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 14.0f));
 
-    const bool open = ImGui::BeginChild(id, size, ImGuiChildFlags_Borders);
+    const ImGuiChildFlags childFlags = ImGuiChildFlags_Borders | (autoHeight ? ImGuiChildFlags_AutoResizeY : ImGuiChildFlags_None);
+    const ImGuiWindowFlags winFlags = autoHeight ? (ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse) : ImGuiWindowFlags_None;
+    const ImVec2 childSize = autoHeight ? ImVec2(size.x, 0.0f) : size;
+
+    const bool open = ImGui::BeginChild(id, childSize, childFlags, winFlags);
     if (open && title != nullptr && title[0] != '\0') {
         ImGui::TextColored(pal.text, "%s", title);
         ImGui::Separator();

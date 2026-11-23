@@ -40,11 +40,17 @@ void GuiRenderer::renderYieldManagementScreen() {
 
         // Left: Simulator Sliders + Live Price Table + Manual Override
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##YieldSimControls", "Pricing Simulator Parameters", ImVec2(0.0f, 340.0f))) {
-            ImGui::SliderFloat("Simulated Occupancy (%)", &m_yieldState.occSliderPct, 0.0f, 100.0f, "%.0f%%");
+        if (beginCard("##YieldSimControls", "Pricing Simulator Parameters", ImVec2(0.0f, 0.0f), true)) {
+            ImGui::TextColored(pal.dimText, "Simulated Occupancy (%%)");
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::SliderFloat("##SimOcc", &m_yieldState.occSliderPct, 0.0f, 100.0f, "%.0f%%");
+            ImGui::Spacing();
             ImGui::Checkbox("Peak Season (Dec–Jan / Jun–Aug: x1.15)", &m_yieldState.peakSeason);
             ImGui::Checkbox("Weekend Night (Fri / Sat: x1.10)", &m_yieldState.weekendNight);
-            ImGui::SliderFloat("Price Elasticity (epsilon)", &m_yieldState.elasticityEps, -2.5f, -0.2f, "%.2f");
+            ImGui::Spacing();
+            ImGui::TextColored(pal.dimText, "Price Elasticity (epsilon)");
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::SliderFloat("##SimEps", &m_yieldState.elasticityEps, -2.5f, -0.2f, "%.2f");
 
             const int simOccRooms = static_cast<int>(std::llround((m_yieldState.occSliderPct / 100.0f) * static_cast<float>(Cfg::TOTAL_ROOMS)));
             const YieldPricingResult simRes = computeYieldPricing(
@@ -56,9 +62,11 @@ void GuiRenderer::renderYieldManagementScreen() {
                 0.0
             );
 
+            ImGui::Spacing();
             ImGui::Separator();
-            ImGui::TextColored(pal.goldHighlight, "Simulated Surge: x%.2f  (Occ x%.2f · Seas x%.2f · Wknd x%.2f)",
-                               simRes.surge, simRes.occMult, simRes.seasonMult, simRes.weekendMult);
+            ImGui::Spacing();
+            ImGui::TextColored(pal.goldHighlight, "Simulated Surge: x%.2f", simRes.surge);
+            ImGui::TextColored(pal.dimText, "Occ x%.2f · Seas x%.2f · Wknd x%.2f", simRes.occMult, simRes.seasonMult, simRes.weekendMult);
             ImGui::Spacing();
             ImGui::Text("Standard     : %s", formatPKR(simRes.standardPrice).c_str());
             ImGui::Text("Deluxe       : %s", formatPKR(simRes.deluxePrice).c_str());
@@ -68,20 +76,27 @@ void GuiRenderer::renderYieldManagementScreen() {
         endCard();
 
         ImGui::Spacing();
-        if (beginCard("##YieldOverrideCard", "Admin Manual Surge Override (Audit-Logged)", ImVec2(0.0f, 220.0f))) {
+        if (beginCard("##YieldOverrideCard", "Admin Manual Surge Override (Audit-Logged)", ImVec2(0.0f, 0.0f), true)) {
             ImGui::TextColored(pal.dimText, "Live Today Surge: x%.2f  |  Override: %s",
                                liveToday.surge,
                                (m_system.db().settings.manualSurgeOverride > 0.0) ? "ACTIVE" : "Auto");
-            ImGui::SliderFloat("Override Multiplier", &m_yieldState.overrideMult, 1.00f, 1.60f, "x%.2f");
-            ImGui::InputTextWithHint("Reason", "e.g. Islamabad Tech Summit peak demand", m_yieldState.overrideReason, sizeof(m_yieldState.overrideReason));
-            if (primaryButton("Apply Override", ImVec2(145.0f, 34.0f))) {
+            ImGui::Spacing();
+            ImGui::TextColored(pal.dimText, "Override Multiplier");
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::SliderFloat("##OvMult", &m_yieldState.overrideMult, 1.00f, 1.60f, "x%.2f");
+            ImGui::Spacing();
+            ImGui::TextColored(pal.dimText, "Reason");
+            ImGui::SetNextItemWidth(-1.0f);
+            ImGui::InputTextWithHint("##OvReason", "e.g. Islamabad Tech Summit peak demand", m_yieldState.overrideReason, sizeof(m_yieldState.overrideReason));
+            ImGui::Spacing();
+            if (primaryButton("Apply Override", ImVec2(0.0f, 34.0f))) {
                 std::string err;
                 if (!m_system.setManualSurgeOverride(static_cast<double>(m_yieldState.overrideMult), m_yieldState.overrideReason, &err)) {
                     Toast::push(NoticeType::Error, "Override Rejected", err);
                 }
             }
             ImGui::SameLine();
-            if (ghostButton("Reset to Auto", ImVec2(130.0f, 34.0f))) {
+            if (ghostButton("Reset to Auto", ImVec2(0.0f, 34.0f))) {
                 m_system.setManualSurgeOverride(0.0, "Restored automatic yield pricing");
             }
         }
@@ -89,12 +104,12 @@ void GuiRenderer::renderYieldManagementScreen() {
 
         // Right: ImPlot Revenue vs Surge Curve (1.0 - 1.6)
         ImGui::TableSetColumnIndex(1);
-        if (beginCard("##YieldCurveCard", "Expected Revenue R = price * D0 * (surge)^epsilon", ImVec2(0.0f, 570.0f))) {
+        if (beginCard("##YieldCurveCard", "Expected Revenue R(s) = roundTo10(base * s) * min(50, D0 * s^epsilon)", ImVec2(0.0f, 620.0f))) {
             const int simOccRooms = static_cast<int>(std::llround((m_yieldState.occSliderPct / 100.0f) * static_cast<float>(Cfg::TOTAL_ROOMS)));
             const YieldPricingResult simRes = computeYieldPricing(
                 simOccRooms, Cfg::TOTAL_ROOMS, m_yieldState.peakSeason, m_yieldState.weekendNight, true, 0.0
             );
-            const double d0 = std::max(5.0, static_cast<double>(simOccRooms));
+            const double d0 = latentDemandForOccupancy(static_cast<double>(m_yieldState.occSliderPct) / 100.0);
             double optSurge = 1.0;
             double maxRev   = 0.0;
             const std::vector<YieldCurvePoint> curve = simulateYieldCurve(
@@ -116,9 +131,13 @@ void GuiRenderer::renderYieldManagementScreen() {
             ImGui::TextColored(pal.secondaryAccent, "Current Point: x%.2f -> %s", simRes.surge, formatPKR(curRev).c_str());
             ImGui::SameLine(0.0f, 24.0f);
             ImGui::TextColored(pal.statusAvailable, "Revenue-Maximising Surge: x%.2f -> %s", optSurge, formatPKR(maxRev).c_str());
+            if (std::fabs(optSurge - 1.0) < 1e-6) {
+                ImGui::TextColored(pal.dimText, "Demand is below capacity; no surge needed.");
+            }
             ImGui::Spacing();
 
-            if (ImPlot::BeginPlot("##YieldRevPlot", ImVec2(-1.0f, 460.0f))) {
+            const float plotH = std::max(360.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+            if (ImPlot::BeginPlot("##YieldRevPlot", ImVec2(-1.0f, plotH))) {
                 ImPlot::SetupAxes("Surge Multiplier", "Expected Nightly Revenue (PKR)");
                 ImPlot::SetupAxisLimits(ImAxis_X1, 0.98, 1.62, ImPlotCond_Always);
 
@@ -348,7 +367,7 @@ void GuiRenderer::renderHousekeepingBoardScreen() {
         "Custom Binary Min-Heap keyed on -P where P = 3U + V + E + 2*sev · Auto-recomputed every 30s"
     );
 
-    if (beginCard("##HkToolbar", nullptr, ImVec2(0.0f, 66.0f))) {
+    if (beginCard("##HkToolbar", nullptr, ImVec2(0.0f, 0.0f), true)) {
         if (primaryButton("Recompute Heap Priorities Now", ImVec2(240.0f, 34.0f))) {
             m_system.recomputeAllTaskPriorities();
             Toast::push(NoticeType::Info, "Min-Heap Rebuilt", "Recomputed all task priority scores.");
@@ -450,7 +469,7 @@ void GuiRenderer::renderServiceOrdersKanbanScreen() {
     );
 
     // Quick Create Order bar
-    if (beginCard("##KanbanCreateBar", nullptr, ImVec2(0.0f, 68.0f))) {
+    if (beginCard("##KanbanCreateBar", nullptr, ImVec2(0.0f, 0.0f), true)) {
         const char* addOnTypes[] = {"Minibar", "Laundry", "Dining", "Spa", "Transport"};
         const std::string bkLbl = (m_kanbanState.newOrderBookingId > 0)
                                       ? ("Booking #" + std::to_string(m_kanbanState.newOrderBookingId))
@@ -482,7 +501,7 @@ void GuiRenderer::renderServiceOrdersKanbanScreen() {
         ImGui::SetNextItemWidth(95.0f);
         ImGui::InputFloat("PKR##KbP", &m_kanbanState.newOrderPrice, 0.0f, 0.0f, "%.0f");
         ImGui::SameLine();
-        if (primaryButton("+ Create Order", ImVec2(140.0f, 34.0f), m_kanbanState.newOrderBookingId > 0 && m_kanbanState.newOrderItem[0] != '\0')) {
+        if (primaryButton("+ Create Order", ImVec2(0.0f, 34.0f), m_kanbanState.newOrderBookingId > 0 && m_kanbanState.newOrderItem[0] != '\0')) {
             m_system.createServiceOrder(
                 m_kanbanState.newOrderBookingId,
                 static_cast<AddOnType>(m_kanbanState.newOrderTypeIdx),
@@ -516,21 +535,34 @@ void GuiRenderer::renderServiceOrdersKanbanScreen() {
                     char cId[32]{};
                     std::snprintf(cId, sizeof(cId), "##KbOrder_%d", o.id);
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, pal.surface);
-                    ImGui::BeginChild(cId, ImVec2(0.0f, 88.0f), ImGuiChildFlags_Borders);
+                    ImGui::BeginChild(
+                        cId,
+                        ImVec2(0.0f, 0.0f),
+                        ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY,
+                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+                    );
                     drawBadge(toString(o.type), colAccents[stage]);
                     ImGui::SameLine();
                     ImGui::TextColored(pal.text, "Room %d  (x%d)", r ? r->number : 0, o.qty);
-                    ImGui::Text("%s", o.item.c_str());
-                    ImGui::TextColored(pal.goldHighlight, "%s", formatPKR(o.price * o.qty).c_str());
+                    ImGui::TextWrapped("%s", o.item.c_str());
+                    ImGui::Spacing();
+                    const std::string priceStr = formatPKR(o.price * o.qty);
+                    const float priceW = ImGui::CalcTextSize(priceStr.c_str()).x;
+                    const float advW   = visibleTextSize("Advance ->").x + 24.0f;
+                    const float availW = ImGui::GetContentRegionAvail().x;
+                    ImGui::TextColored(pal.goldHighlight, "%s", priceStr.c_str());
                     if (stage < 2) {
-                        ImGui::SameLine(ImGui::GetWindowWidth() - 95.0f);
+                        if (priceW + 12.0f + advW <= availW) {
+                            ImGui::SameLine(ImGui::GetCursorPosX() + (availW - advW));
+                        }
                         char advId[32]{}; std::snprintf(advId, sizeof(advId), "Advance ->##KbAdv%d", o.id);
-                        if (ghostButton(advId, ImVec2(84.0f, 24.0f))) {
+                        if (ghostButton(advId, ImVec2(advW, 28.0f))) {
                             m_system.moveServiceOrderStage(o.id, stage + 1);
                         }
                     }
                     ImGui::EndChild();
                     ImGui::PopStyleColor();
+                    ImGui::Spacing();
 
                     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
                         ImGui::SetDragDropPayload("HMS_KANBAN_ORDER", &o.id, sizeof(int));
@@ -573,7 +605,7 @@ void GuiRenderer::renderStaffScreen() {
 
     drawSectionHeader("Staff & RBAC Accounts", "Salted 1,000-round SHA-256 credentials · Server-side role enforcement");
 
-    if (beginCard("##StaffAddCard", "Create New Staff Account", ImVec2(0.0f, 100.0f))) {
+    if (beginCard("##StaffAddCard", "Create New Staff Account", ImVec2(0.0f, 0.0f), true)) {
         const char* roles[] = {"Admin", "Receptionist", "Housekeeping"};
         ImGui::SetNextItemWidth(150.0f); ImGui::InputTextWithHint("##StU", "Username", m_staffState.newUserBuf, sizeof(m_staffState.newUserBuf));
         ImGui::SameLine();
@@ -583,7 +615,7 @@ void GuiRenderer::renderStaffScreen() {
         ImGui::SameLine();
         ImGui::SetNextItemWidth(140.0f); ImGui::Combo("##StR", &m_staffState.newRoleIdx, roles, 3);
         ImGui::SameLine();
-        if (primaryButton("Create User", ImVec2(120.0f, 34.0f))) {
+        if (primaryButton("Create User", ImVec2(0.0f, 34.0f))) {
             std::string err;
             if (m_system.createUser(m_staffState.newUserBuf, m_staffState.newPassBuf, static_cast<Role>(m_staffState.newRoleIdx), m_staffState.newNameBuf, &err)) {
                 m_staffState.newUserBuf[0] = '\0';
@@ -597,16 +629,33 @@ void GuiRenderer::renderStaffScreen() {
     endCard();
     ImGui::Spacing();
 
+    int activeAdmins = 0;
+    for (const User& cand : db.users) {
+        if (cand.role == Role::Admin && cand.active) {
+            ++activeAdmins;
+        }
+    }
+    const User* signedIn = m_system.currentUser();
+    const int myUserId = (signedIn != nullptr) ? signedIn->id : -1;
+    const float actBtnW = std::max(visibleTextSize("Disable").x, visibleTextSize("Enable").x) + 26.0f;
+
     if (beginCard("##StaffTblCard", "Registered Staff", ImVec2(0.0f, 0.0f))) {
         if (ImGui::BeginTable("##StaffTbl", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 45.0f);
+            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 48.0f);
             ImGui::TableSetupColumn("Username");
             ImGui::TableSetupColumn("Display Name");
-            ImGui::TableSetupColumn("Role", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 95.0f);
-            ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+            ImGui::TableSetupColumn("Role", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 105.0f);
+            ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, actBtnW + 16.0f);
             ImGui::TableHeadersRow();
             for (const User& u : db.users) {
+                const bool isSelf = (u.id == myUserId);
+                const bool isLastAdmin = (u.role == Role::Admin && u.active && activeAdmins <= 1);
+                const bool canToggle = !(u.active && (isSelf || isLastAdmin));
+                const char* blockTip = isSelf
+                    ? "You cannot disable the account you are currently signed in with."
+                    : (isLastAdmin ? "At least one active Admin account is required." : nullptr);
+
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0); ImGui::Text("#%d", u.id);
                 ImGui::TableSetColumnIndex(1); ImGui::Text("%s", u.username.c_str());
@@ -616,7 +665,13 @@ void GuiRenderer::renderStaffScreen() {
                 ImGui::TableSetColumnIndex(5);
                 char actId[32]{};
                 std::snprintf(actId, sizeof(actId), "%s##StAct%d", u.active ? "Disable" : "Enable", u.id);
-                if (u.active ? dangerButton(actId, ImVec2(88.0f, 26.0f)) : primaryButton(actId, ImVec2(88.0f, 26.0f))) {
+                const bool clicked = u.active
+                    ? dangerButton(actId, ImVec2(actBtnW, 28.0f), canToggle)
+                    : primaryButton(actId, ImVec2(actBtnW, 28.0f), true);
+                if (!canToggle && blockTip != nullptr && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("%s", blockTip);
+                }
+                if (clicked) {
                     std::string err;
                     if (!m_system.setUserActive(u.id, !u.active, &err)) {
                         Toast::push(NoticeType::Error, "Update Failed", err);
@@ -714,25 +769,31 @@ void GuiRenderer::renderBackupsScreen() {
     if (ImGui::BeginTable("##BackupTopRow", 2, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##BackupActionsCard", "Snapshot Backup Controls", ImVec2(0.0f, 130.0f))) {
-            ImGui::TextColored(pal.dimText, "Copies all 11 verified .dat tables into backups/YYYYMMDD_HHMMSS/.");
+        if (beginCard("##BackupActionsCard", "Snapshot Backup Controls", ImVec2(0.0f, 0.0f), true)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, pal.dimText);
+            ImGui::TextWrapped("Copies all 11 verified .dat tables into backups/YYYYMMDD_HHMMSS/.");
+            ImGui::PopStyleColor();
             ImGui::Spacing();
-            if (primaryButton("Create Snapshot Backup Now", ImVec2(240.0f, 38.0f))) {
+            if (primaryButton("Create Snapshot Backup Now", ImVec2(0.0f, 38.0f))) {
                 m_system.createBackupNow();
             }
         }
         endCard();
 
         ImGui::TableSetColumnIndex(1);
-        if (beginCard("##NightAuditCard", "Night Audit Business-Day Closeout", ImVec2(0.0f, 130.0f))) {
-            ImGui::TextColored(pal.dimText, "Rolls overdue no-shows, flags unpaid invoices, writes DailyStat & NightAudit_<date>.txt.");
+        if (beginCard("##NightAuditCard", "Night Audit Business-Day Closeout", ImVec2(0.0f, 0.0f), true)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, pal.dimText);
+            ImGui::TextWrapped("Rolls overdue no-shows, flags unpaid invoices, writes DailyStat & NightAudit_<date>.txt.");
+            ImGui::PopStyleColor();
             ImGui::Spacing();
-            if (primaryButton("Run Night Audit", ImVec2(190.0f, 38.0f))) {
+            if (primaryButton("Run Night Audit", ImVec2(0.0f, 38.0f))) {
                 m_system.runNightAudit(&m_adminOpsState.lastNightAuditPath, &m_adminOpsState.lastNightAuditSummary);
             }
             if (!m_adminOpsState.lastNightAuditSummary.empty()) {
-                ImGui::SameLine();
-                ImGui::TextColored(pal.statusAvailable, "Report: %s", m_adminOpsState.lastNightAuditPath.c_str());
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Text, pal.statusAvailable);
+                ImGui::TextWrapped("Report: %s", m_adminOpsState.lastNightAuditPath.c_str());
+                ImGui::PopStyleColor();
             }
         }
         endCard();
@@ -1468,7 +1529,7 @@ void GuiRenderer::updateAndRenderGuidedDemo(float deltaTime) {
                 navigateTo(ScreenId::SmartCheckIn);
                 break;
             case 4:
-                m_demoState.captionText = "[Step 5/7 — Dynamic Yield Simulator] Real-time price elasticity curve R = price * D0 * surge^epsilon with revenue-maximising peak.";
+                m_demoState.captionText = "[Step 5/7 — Dynamic Yield Simulator] Capacity-aware revenue curve R(s) = roundTo10(base * s) * min(50, D0 * s^epsilon) with revenue-maximising peak.";
                 m_yieldState.occSliderPct = 88.0f;
                 m_yieldState.weekendNight = true;
                 navigateTo(ScreenId::YieldManagement);

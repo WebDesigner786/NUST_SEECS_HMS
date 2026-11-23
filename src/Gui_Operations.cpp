@@ -107,7 +107,7 @@ void GuiRenderer::renderTimelineScreen() {
     );
 
     // Controls bar: Scroll window, Zoom, Today button
-    if (beginCard("##TimelineControls", nullptr, ImVec2(0.0f, 66.0f))) {
+    if (beginCard("##TimelineControls", nullptr, ImVec2(0.0f, 0.0f), true)) {
         if (ghostButton("<< -7d", ImVec2(76.0f, 32.0f))) { m_timelineState.startDayOffset -= 7; }
         ImGui::SameLine();
         if (ghostButton("< -1d", ImVec2(66.0f, 32.0f))) { m_timelineState.startDayOffset -= 1; }
@@ -188,7 +188,7 @@ void GuiRenderer::renderTimelineScreen() {
             char fHeader[48]{};
             std::snprintf(fHeader, sizeof(fHeader), "%s  Floor %d (Rooms %d01–%d10)##TlFl%d",
                           m_timelineState.floorExpanded[fIdx] ? "[-]" : "[+]", floor, floor, floor, floor);
-            if (ghostButton(fHeader, ImVec2(260.0f, 26.0f))) {
+            if (ghostButton(fHeader, ImVec2(0.0f, 28.0f))) {
                 m_timelineState.floorExpanded[fIdx] = !m_timelineState.floorExpanded[fIdx];
             }
             if (!m_timelineState.floorExpanded[fIdx]) {
@@ -361,7 +361,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
     );
 
     // Filter & Add bar
-    if (beginCard("##CrmTopBar", nullptr, ImVec2(0.0f, 66.0f))) {
+    if (beginCard("##CrmTopBar", nullptr, ImVec2(0.0f, 0.0f), true)) {
         ImGui::SetNextItemWidth(320.0f);
         ImGui::InputTextWithHint("##CrmSearch", "Filter by name, CNIC, passport, phone, email...", m_crmState.searchBuf, sizeof(m_crmState.searchBuf));
         ImGui::SameLine();
@@ -652,7 +652,7 @@ void GuiRenderer::renderBookingsScreen() {
         "Manage active stays, check-ins, cancellations (>48h free / <=48h 1st-night fee) & no-shows"
     );
 
-    if (beginCard("##BookingsTopBar", nullptr, ImVec2(0.0f, 66.0f))) {
+    if (beginCard("##BookingsTopBar", nullptr, ImVec2(0.0f, 0.0f), true)) {
         const char* statusOpts[] = {"All Statuses", "Reserved", "Checked In", "Checked Out", "Cancelled", "No-Show"};
         ImGui::SetNextItemWidth(160.0f);
         ImGui::Combo("##BkStatusFilter", &m_opsState.bookingStatusFilter, statusOpts, 6);
@@ -773,7 +773,7 @@ void GuiRenderer::renderBillingScreen() {
         "Itemized GST folios · 80-column plain ASCII .txt & print-ready .html receipts"
     );
 
-    if (beginCard("##BillingFilterBar", nullptr, ImVec2(0.0f, 66.0f))) {
+    if (beginCard("##BillingFilterBar", nullptr, ImVec2(0.0f, 0.0f), true)) {
         const char* paidOpts[] = {"All Invoices", "Paid Only", "Unpaid Only"};
         ImGui::SetNextItemWidth(150.0f);
         ImGui::Combo("##BillPaidFilter", &m_opsState.billingPaidFilter, paidOpts, 3);
@@ -785,16 +785,19 @@ void GuiRenderer::renderBillingScreen() {
     ImGui::Spacing();
 
     if (beginCard("##BillingTableCard", "Issued Invoices", ImVec2(0.0f, 0.0f))) {
+        const float prevBtnW = visibleTextSize("Preview & Export").x + 26.0f;
+        const float payBtnW  = visibleTextSize("Mark Paid").x + 24.0f;
+        const float actionsColW = prevBtnW + payBtnW + ImGui::GetStyle().ItemSpacing.x + 14.0f;
         if (db.invoices.empty()) {
             drawEmptyState("No Invoices Generated", "Invoices are automatically created upon Check-Out or Cancellation Fee.");
         } else if (ImGui::BeginTable("##InvoicesTbl", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("Invoice #", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Invoice #", ImGuiTableColumnFlags_WidthFixed, 105.0f);
             ImGui::TableSetupColumn("Guest");
-            ImGui::TableSetupColumn("Issued", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-            ImGui::TableSetupColumn("Taxable", ImGuiTableColumnFlags_WidthFixed, 115.0f);
-            ImGui::TableSetupColumn("Grand Total", ImGuiTableColumnFlags_WidthFixed, 125.0f);
-            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 92.0f);
-            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 235.0f);
+            ImGui::TableSetupColumn("Issued", ImGuiTableColumnFlags_WidthFixed, 105.0f);
+            ImGui::TableSetupColumn("Taxable", ImGuiTableColumnFlags_WidthFixed, 120.0f);
+            ImGui::TableSetupColumn("Grand Total", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 96.0f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, actionsColW);
             ImGui::TableHeadersRow();
 
             for (int i = static_cast<int>(db.invoices.size()) - 1; i >= 0; --i) {
@@ -819,14 +822,14 @@ void GuiRenderer::renderBillingScreen() {
                 ImGui::TableSetColumnIndex(6);
 
                 char prevBtn[32]{}; std::snprintf(prevBtn, sizeof(prevBtn), "Preview & Export##Prev%d", inv.id);
-                if (primaryButton(prevBtn, ImVec2(138.0f, 26.0f))) {
+                if (primaryButton(prevBtn, ImVec2(prevBtnW, 28.0f))) {
                     openInvoicePreview(inv.id);
                     Toast::push(NoticeType::Success, "Invoice Exported", "Saved TXT & HTML receipts for " + inv.number);
                 }
                 if (!inv.paid) {
                     ImGui::SameLine();
                     char payBtn[32]{}; std::snprintf(payBtn, sizeof(payBtn), "Mark Paid##Pay%d", inv.id);
-                    if (ghostButton(payBtn, ImVec2(84.0f, 26.0f))) {
+                    if (ghostButton(payBtn, ImVec2(payBtnW, 28.0f))) {
                         m_system.markInvoicePaid(inv.id, "Card");
                     }
                 }
@@ -978,7 +981,7 @@ void GuiRenderer::renderWaitlistScreen() {
         "std::queue ordered by request date · Auto-matches when any compatible room frees up"
     );
 
-    if (beginCard("##WaitlistAddCard", "Quick Add to Waitlist", ImVec2(0.0f, 108.0f))) {
+    if (beginCard("##WaitlistAddCard", "Quick Add to Waitlist", ImVec2(0.0f, 0.0f), true)) {
         const char* typeNames[] = {"Standard", "Deluxe", "Suite", "Presidential"};
         const std::string selGuestName = [&]() -> std::string {
             if (const Guest* g = m_system.findGuestById(m_opsState.wlGuestId)) { return g->fullName; }

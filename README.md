@@ -206,12 +206,12 @@ Launches the full GLFW + OpenGL 3.3 + Dear ImGui window, renders frames across s
 ---
 
 ### 8.2 Dynamic Yield Management & Elasticity Simulator
-**Formula:** $\text{surge} = \min(1.60, \text{occMult} \times \text{seasonMult} \times \text{weekendMult})$, $\text{price} = \text{round}_{10}(\text{baseRate} \times \text{surge})$, demand $D = D_0 \cdot \text{surge}^{\varepsilon}$, revenue $R = \text{price} \cdot D$.
+**Formula:** $\text{surge} = \min(1.60, \text{occMult} \times \text{seasonMult} \times \text{weekendMult})$, $\text{price}(s) = \text{round}_{10}(\text{baseRate} \times s)$, latent demand $D_0 = \text{simulatedOccupancy} \times \text{TOTAL\_ROOMS} \times 1.35$, capacity-capped demand $D(s) = \min(\text{TOTAL\_ROOMS}, D_0 \cdot s^{\varepsilon})$, expected revenue $R(s) = \text{price}(s) \cdot D(s)$.
 
 **Worked Example:** 38 of 50 rooms occupied/reserved ($\text{occ} = 76\% \Rightarrow \text{occMult} = 1.10$), peak summer July ($\text{seasonMult} = 1.15$), Friday night ($\text{weekendMult} = 1.10$):
 - Raw surge $= 1.10 \times 1.15 \times 1.10 = 1.3915 \le 1.60$.
 - Deluxe base PKR 12,500 $\Rightarrow 12{,}500 \times 1.3915 = 17{,}393.75 \rightarrow \text{PKR } 17{,}390$ (rounded to nearest PKR 10).
-- With $D_0 = 50$ and $\varepsilon = -1.2$: $D = 50 \times 1.3915^{-1.2} \approx 33.66$ rooms, expected revenue $R \approx \text{PKR } 585{,}347$.
+- At $90\%$ simulated occupancy ($D_0 = 0.90 \times 50 \times 1.35 = 60.75$) and $\varepsilon = -1.2$: revenue rises while $D_0 \cdot s^{\varepsilon} \ge 50$ and peaks at $s \approx 1.18$ ($D \approx 49.85$ rooms), giving a genuine revenue-maximising optimum above $1.00$. At $40\%$ occupancy ($D_0 = 27 < 50$), demand is already below capacity so the optimum is $1.00$ (no surge needed).
 
 **3-Line Big-O Justification:**
 1. `computeYieldPricing` evaluates a fixed set of threshold checks and multiplications in $O(1)$ time and $O(1)$ space.

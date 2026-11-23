@@ -14,7 +14,19 @@
 namespace hms {
 
 /* Returns the end of the visible part of an ImGui label (before any "##id" suffix). O(N) time, O(1) space. */
-inline const char* visibleLabelEnd(const char* label) { return ImGui::FindRenderedTextEnd(label); }
+inline const char* visibleLabelEnd(const char* label) {
+    if (label == nullptr) {
+        return nullptr;
+    }
+    const char* p = label;
+    while (*p != '\0') {
+        if (p[0] == '#' && p[1] == '#') {
+            break;
+        }
+        ++p;
+    }
+    return p;
+}
 
 /* Measures only the visible portion of a label (ignores "##id"). O(N) time, O(1) space. */
 inline ImVec2 visibleTextSize(const char* label) { return ImGui::CalcTextSize(label, nullptr, true); }
@@ -316,7 +328,7 @@ public:
     // -------------------------------------------------------------------------
     // Shared Widgets (Section 8 — write once, reuse everywhere)
     // -------------------------------------------------------------------------
-    bool beginCard(const char* id, const char* title, const ImVec2& size = ImVec2(0.0f, 0.0f));
+    bool beginCard(const char* id, const char* title, const ImVec2& size = ImVec2(0.0f, 0.0f), bool autoHeight = false);
     void endCard();
     void drawKpiTile(
         const char* id,

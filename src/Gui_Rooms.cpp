@@ -225,7 +225,7 @@ void GuiRenderer::renderRoomMatrixScreen() {
     }
 
     // Filters & Legend Bar Card
-    if (beginCard("##RoomMatrixFilterBar", nullptr, ImVec2(0.0f, 108.0f))) {
+    if (beginCard("##RoomMatrixFilterBar", nullptr, ImVec2(0.0f, 0.0f), true)) {
         const char* statusNames[5] = {"Available", "Occupied", "Reserved", "Cleaning", "Maintenance"};
         const ImVec4 statusCols[5] = {
             pal.statusAvailable, pal.statusOccupied, pal.statusReserved, pal.statusCleaning, pal.statusMaintenance
