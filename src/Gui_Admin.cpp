@@ -104,7 +104,8 @@ void GuiRenderer::renderYieldManagementScreen() {
 
         // Right: ImPlot Revenue vs Surge Curve (1.0 - 1.6)
         ImGui::TableSetColumnIndex(1);
-        if (beginCard("##YieldCurveCard", "Expected Revenue R(s) = roundTo10(base * s) * min(50, D0 * s^epsilon)", ImVec2(0.0f, 620.0f))) {
+        const float yieldCardH = std::max(520.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+        if (beginCard("##YieldCurveCard", "Expected Revenue R(s) = roundTo10(base * s) * min(50, D0 * s^epsilon)", ImVec2(0.0f, yieldCardH))) {
             const int simOccRooms = static_cast<int>(std::llround((m_yieldState.occSliderPct / 100.0f) * static_cast<float>(Cfg::TOTAL_ROOMS)));
             const YieldPricingResult simRes = computeYieldPricing(
                 simOccRooms, Cfg::TOTAL_ROOMS, m_yieldState.peakSeason, m_yieldState.weekendNight, true, 0.0
@@ -138,6 +139,7 @@ void GuiRenderer::renderYieldManagementScreen() {
 
             const float plotH = std::max(360.0f, ImGui::GetContentRegionAvail().y - 4.0f);
             if (ImPlot::BeginPlot("##YieldRevPlot", ImVec2(-1.0f, plotH))) {
+                ImPlot::SetupLegend(ImPlotLocation_NorthEast, ImPlotLegendFlags_Outside);
                 ImPlot::SetupAxes("Surge Multiplier", "Expected Nightly Revenue (PKR)");
                 ImPlot::SetupAxisLimits(ImAxis_X1, 0.98, 1.62, ImPlotCond_Always);
 
@@ -179,9 +181,38 @@ void GuiRenderer::draw90DayOccupancyHeatmap() {
     }
 
     constexpr int kDays = 91; // 13 columns x 7 rows
-    constexpr float kCell = 18.0f;
-    constexpr float kGap  = 4.0f;
+    constexpr float kGap = 5.0f;
     const int32_t startDay = today - (kDays - 1);
+
+    // Compute min/max occupancy in the displayed 91-day window for 5 relative colour buckets (L6)
+    double minOcc = 100.0;
+    double maxOcc = 0.0;
+    bool hasAnyData = false;
+    for (int i = 0; i < kDays; ++i) {
+        auto it = statByDay.find(startDay + i);
+        if (it != statByDay.end()) {
+            minOcc = std::min(minOcc, it->second.occupancyPct);
+            maxOcc = std::max(maxOcc, it->second.occupancyPct);
+            hasAnyData = true;
+        }
+    }
+    if (!hasAnyData) {
+        minOcc = 0.0;
+        maxOcc = 100.0;
+    }
+    const double occSpan = std::max(1.0, maxOcc - minOcc);
+
+    // 5 distinct shades for the 5 relative buckets
+    const auto bucketColor = [&](int bucket) -> ImVec4 {
+        static constexpr float kAlphas[5] = {0.16f, 0.34f, 0.54f, 0.76f, 1.00f};
+        const int b = std::clamp(bucket, 0, 4);
+        return ImVec4(pal.statusAvailable.x, pal.statusAvailable.y, pal.statusAvailable.z, kAlphas[b]);
+    };
+
+    const float availW = ImGui::GetContentRegionAvail().x;
+    const float lblColW = 46.0f;
+    const float cellW = std::max(18.0f, (availW - lblColW - 12.0f * kGap) / 13.0f);
+    const float cellH = std::clamp(cellW * 0.34f, 20.0f, 26.0f);
 
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -191,50 +222,48 @@ void GuiRenderer::draw90DayOccupancyHeatmap() {
         if (m_fonts.captionFont != nullptr) {
             dl->AddText(
                 m_fonts.captionFont,
-                11.0f,
-                ImVec2(origin.x, origin.y + static_cast<float>(row) * (kCell + kGap) + 3.0f),
+                14.0f,
+                ImVec2(origin.x, origin.y + static_cast<float>(row) * (cellH + kGap) + (cellH - 14.0f) * 0.5f),
                 ThemeEngine::vec4ToU32(pal.dimText),
                 dayLbls[row]
             );
         }
     }
 
-    const float gridLeft = origin.x + 36.0f;
+    const float gridLeft = origin.x + lblColW;
     for (int i = 0; i < kDays; ++i) {
         const int32_t dayNum = startDay + i;
         const int col = i / 7;
         const int row = i % 7;
-        const float x = gridLeft + static_cast<float>(col) * (kCell + kGap);
-        const float y = origin.y + static_cast<float>(row) * (kCell + kGap);
+        const float x = gridLeft + static_cast<float>(col) * (cellW + kGap);
+        const float y = origin.y + static_cast<float>(row) * (cellH + kGap);
 
         double occ = 0.0;
         double rev = 0.0;
+        bool hasStat = false;
         auto it = statByDay.find(dayNum);
         if (it != statByDay.end()) {
             occ = it->second.occupancyPct;
             rev = it->second.revenue;
+            hasStat = true;
         }
 
-        const float intensity = static_cast<float>(std::clamp(occ / 100.0, 0.0, 1.0));
-        const ImVec4 cellCol = (intensity < 0.01f)
-                                   ? pal.surface
-                                   : ThemeEngine::lerpColor(
-                                         ImVec4(pal.statusAvailable.x, pal.statusAvailable.y, pal.statusAvailable.z, 0.28f),
-                                         pal.statusAvailable,
-                                         intensity
-                                     );
+        const int bucket = hasStat
+                               ? std::clamp(static_cast<int>(std::llround(((occ - minOcc) / occSpan) * 4.0)), 0, 4)
+                               : -1;
+        const ImVec4 cellCol = (bucket < 0) ? pal.surface : bucketColor(bucket);
 
         ImGui::SetCursorScreenPos(ImVec2(x, y));
         char cellId[24]{};
         std::snprintf(cellId, sizeof(cellId), "##HmCell_%d", i);
-        ImGui::InvisibleButton(cellId, ImVec2(kCell, kCell));
+        ImGui::InvisibleButton(cellId, ImVec2(cellW, cellH));
         const bool hovered = ImGui::IsItemHovered();
 
-        dl->AddRectFilled(ImVec2(x, y), ImVec2(x + kCell, y + kCell), ThemeEngine::vec4ToU32(cellCol), 4.0f);
+        dl->AddRectFilled(ImVec2(x, y), ImVec2(x + cellW, y + cellH), ThemeEngine::vec4ToU32(cellCol), 4.0f);
         if (hovered || dayNum == today) {
             dl->AddRect(
                 ImVec2(x, y),
-                ImVec2(x + kCell, y + kCell),
+                ImVec2(x + cellW, y + cellH),
                 ThemeEngine::vec4ToU32(dayNum == today ? pal.goldHighlight : pal.text),
                 4.0f,
                 0,
@@ -250,16 +279,14 @@ void GuiRenderer::draw90DayOccupancyHeatmap() {
         }
     }
 
-    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + 7.0f * (kCell + kGap) + 8.0f));
-    ImGui::TextColored(pal.dimText, "Less");
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + 7.0f * (cellH + kGap) + 8.0f));
+    ImGui::TextColored(pal.dimText, "Less (%.0f%%)", minOcc);
     for (int lvl = 0; lvl < 5; ++lvl) {
         ImGui::SameLine();
-        const float f = static_cast<float>(lvl) / 4.0f;
-        const ImVec4 c = (lvl == 0) ? pal.surface : ThemeEngine::lerpColor(ImVec4(pal.statusAvailable.x, pal.statusAvailable.y, pal.statusAvailable.z, 0.28f), pal.statusAvailable, f);
-        drawStatusDot(c, 5.5f);
+        drawStatusDot(bucketColor(lvl), 6.0f);
     }
     ImGui::SameLine();
-    ImGui::TextColored(pal.dimText, "More  (Hover any day for exact occupancy & revenue)");
+    ImGui::TextColored(pal.dimText, "More (%.0f%%)  ·  Hover any day for exact occupancy & revenue", maxOcc);
 }
 
 /*
@@ -272,18 +299,26 @@ void GuiRenderer::draw90DayOccupancyHeatmap() {
 void GuiRenderer::renderAnalyticsScreen() {
     const ThemePalette& pal = m_theme.getActivePalette();
     const HotelDatabase& db = m_system.db();
+    const int32_t today = DateUtil::todayDayNumber();
 
     drawSectionHeader(
         "Executive Analytics & 7-Day Regression Forecast",
         "GitHub-style 90-day occupancy heatmap + least-squares linear regression with shaded +/- 1-sigma confidence band"
     );
 
-    if (beginCard("##HeatmapCard", "90-Day Occupancy Heatmap Calendar", ImVec2(0.0f, 240.0f))) {
+    if (beginCard("##HeatmapCard", "90-Day Occupancy Heatmap Calendar", ImVec2(0.0f, 0.0f), true)) {
         draw90DayOccupancyHeatmap();
     }
     endCard();
 
     ImGui::Spacing();
+
+    double todayInvRev = 0.0;
+    for (const Invoice& inv : db.invoices) {
+        if (inv.issuedDay == today) {
+            todayInvRev += inv.grandTotal;
+        }
+    }
 
     std::vector<double> rev30;
     std::vector<double> occ30;
@@ -291,6 +326,9 @@ void GuiRenderer::renderAnalyticsScreen() {
     for (std::size_t i = start; i < db.stats.size(); ++i) {
         rev30.push_back(db.stats[i].revenue);
         occ30.push_back(db.stats[i].occupancyPct);
+    }
+    if (!db.stats.empty() && db.stats.back().day == today && todayInvRev >= 1.0 && !rev30.empty()) {
+        rev30.back() = todayInvRev;
     }
     if (rev30.empty()) {
         rev30.assign(7U, 0.0);
@@ -300,11 +338,12 @@ void GuiRenderer::renderAnalyticsScreen() {
     const LinearRegressionForecast revFc = compute7DayForecast(rev30, "Analytics Revenue");
     const LinearRegressionForecast occFc = compute7DayForecast(occ30, "Analytics Occupancy");
 
+    const float forecastCardH = std::max(340.0f, ImGui::GetContentRegionAvail().y - 4.0f);
     if (ImGui::BeginTable("##ForecastCharts", 2, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         auto plotForecastCard = [&](const char* cardId, const char* title, const std::vector<double>& hist,
                                     const LinearRegressionForecast& fc, const char* yLbl, const ImVec4& lineCol) {
-            if (beginCard(cardId, title, ImVec2(0.0f, 320.0f))) {
+            if (beginCard(cardId, title, ImVec2(0.0f, forecastCardH))) {
                 ImGui::TextColored(pal.dimText, "Regression: %s", fc.formulaText.c_str());
                 const int hn = static_cast<int>(hist.size());
                 std::vector<double> xh(static_cast<std::size_t>(hn));
@@ -322,7 +361,8 @@ void GuiRenderer::renderAnalyticsScreen() {
                     yLo[static_cast<std::size_t>(f + 1)] = fc.lowerBand7Days[static_cast<std::size_t>(f)];
                 }
 
-                if (ImPlot::BeginPlot((std::string("##Plot_") + cardId).c_str(), ImVec2(-1.0f, 235.0f))) {
+                const float plotH = std::max(230.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+                if (ImPlot::BeginPlot((std::string("##Plot_") + cardId).c_str(), ImVec2(-1.0f, plotH))) {
                     ImPlot::SetupAxes("Day", yLbl);
                     ImPlot::SetNextFillStyle(pal.goldHighlight, 0.18f);
                     ImPlot::PlotShaded("+/- 1-sigma Band", xf.data(), yLo.data(), yUp.data(), 8);
@@ -368,7 +408,7 @@ void GuiRenderer::renderHousekeepingBoardScreen() {
     );
 
     if (beginCard("##HkToolbar", nullptr, ImVec2(0.0f, 0.0f), true)) {
-        if (primaryButton("Recompute Heap Priorities Now", ImVec2(240.0f, 34.0f))) {
+        if (primaryButton("Recompute Heap Priorities Now", ImVec2(0.0f, 34.0f))) {
             m_system.recomputeAllTaskPriorities();
             Toast::push(NoticeType::Info, "Min-Heap Rebuilt", "Recomputed all task priority scores.");
         }
@@ -397,7 +437,12 @@ void GuiRenderer::renderHousekeepingBoardScreen() {
                 char cardId[32]{};
                 std::snprintf(cardId, sizeof(cardId), "##HkTaskRow_%d", t.id);
                 ImGui::PushStyleColor(ImGuiCol_ChildBg, pal.surface);
-                ImGui::BeginChild(cardId, ImVec2(0.0f, 82.0f), ImGuiChildFlags_Borders);
+                ImGui::BeginChild(
+                    cardId,
+                    ImVec2(0.0f, 0.0f),
+                    ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY,
+                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+                );
 
                 ImGui::TextColored(pal.text, "#%zu  Room %d", i + 1U, r ? r->number : 0);
                 ImGui::SameLine();
@@ -415,20 +460,33 @@ void GuiRenderer::renderHousekeepingBoardScreen() {
                     drawBadge(sBadge, pal.statusOccupied);
                 }
 
-                // Right-aligned action buttons
-                ImGui::SameLine(std::max(460.0f, ImGui::GetWindowWidth() - 310.0f));
+                // Right-aligned action buttons sized from measured text width
+                const float stW = visibleTextSize("Start").x + 24.0f;
+                const float dnW = visibleTextSize("Done").x + 24.0f;
+                const float reW = visibleTextSize("Reassign").x + 24.0f;
+                const float sp  = ImGui::GetStyle().ItemSpacing.x;
+                const float grpW = stW + dnW + reW + sp * 2.0f;
+                const float rightX = ImGui::GetWindowContentRegionMax().x - grpW;
+                if (rightX > ImGui::GetCursorPosX() + 12.0f) {
+                    ImGui::SameLine(rightX);
+                } else {
+                    ImGui::SameLine();
+                }
                 char stId[32]{}; std::snprintf(stId, sizeof(stId), "Start##HkS%d", t.id);
-                if (ghostButton(stId, ImVec2(72.0f, 28.0f), t.status == TaskStatus::Queued)) {
+                if (ghostButton(stId, ImVec2(stW, 28.0f), t.status == TaskStatus::Queued)) {
                     m_system.startHousekeepingTask(t.id);
+                }
+                if (t.status != TaskStatus::Queued && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("Task is already in progress.");
                 }
                 ImGui::SameLine();
                 char dnId[32]{}; std::snprintf(dnId, sizeof(dnId), "Done##HkD%d", t.id);
-                if (primaryButton(dnId, ImVec2(72.0f, 28.0f))) {
+                if (primaryButton(dnId, ImVec2(dnW, 28.0f))) {
                     m_system.completeHousekeepingTask(t.id);
                 }
                 ImGui::SameLine();
                 char reId[32]{}; std::snprintf(reId, sizeof(reId), "Reassign##HkR%d", t.id);
-                if (ghostButton(reId, ImVec2(88.0f, 28.0f))) {
+                if (ghostButton(reId, ImVec2(reW, 28.0f))) {
                     m_system.reassignHousekeepingTask(t.id, m_hkReassignBuf);
                     Toast::push(NoticeType::Info, "Task Reassigned", "Task #" + std::to_string(t.id) + " -> " + std::string(m_hkReassignBuf));
                 }
@@ -713,7 +771,7 @@ void GuiRenderer::renderAuditLogScreen() {
         ImGui::TextColored(pal.statusOccupied, "TAMPERING DETECTED at entry #%d — Hash mismatch! Inspect data/audit_log.dat!", badIdx);
     }
     ImGui::SameLine(ImGui::GetWindowWidth() - 145.0f);
-    if (primaryButton("Verify Now", ImVec2(125.0f, 32.0f))) {
+    if (primaryButton("Verify Now", ImVec2(0.0f, 32.0f))) {
         const int res = m_system.verifyAuditLogChain();
         if (res == -1) {
             Toast::push(NoticeType::Success, "Audit Chain Verified", "All " + std::to_string(db.auditLog.size()) + " entries verified.");
@@ -817,7 +875,7 @@ void GuiRenderer::renderBackupsScreen() {
                 ImGui::TableSetColumnIndex(2);
                 char rstId[48]{};
                 std::snprintf(rstId, sizeof(rstId), "Restore##BkRst%zu", i);
-                if (dangerButton(rstId, ImVec2(105.0f, 26.0f))) {
+                if (dangerButton(rstId, ImVec2(0.0f, 28.0f))) {
                     m_adminOpsState.pendingRestoreSnap = snaps[i];
                     m_adminOpsState.openRestoreModal = true;
                 }
@@ -839,7 +897,7 @@ void GuiRenderer::renderBackupsScreen() {
         ImGui::TextWrapped("Restore all 11 .dat tables from snapshot '%s'? Current unsaved changes will be replaced.",
                            m_adminOpsState.pendingRestoreSnap.c_str());
         ImGui::Spacing();
-        if (dangerButton("Yes, Restore Snapshot", ImVec2(190.0f, 36.0f))) {
+        if (dangerButton("Yes, Restore Snapshot", ImVec2(0.0f, 36.0f))) {
             std::string err;
             if (!m_system.restoreBackup(m_adminOpsState.pendingRestoreSnap, &err)) {
                 Toast::push(NoticeType::Error, "Restore Failed", err);
@@ -847,7 +905,7 @@ void GuiRenderer::renderBackupsScreen() {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ghostButton("Cancel", ImVec2(100.0f, 36.0f))) {
+        if (ghostButton("Cancel", ImVec2(0.0f, 36.0f))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -861,19 +919,43 @@ void GuiRenderer::renderBackupsScreen() {
  * Big-O: O(1) time.
  */
 void GuiRenderer::renderSettingsScreen() {
+    const ThemePalette& pal = m_theme.getActivePalette();
     drawSectionHeader("System Settings", "Persisted atomically to data/settings.dat with FNV-1a checksum");
-    if (beginCard("##SettingsCard", "Hotel Configuration", ImVec2(560.0f, 300.0f))) {
+    if (beginCard("##SettingsCard", "Hotel Configuration & Display", ImVec2(0.0f, 0.0f), true)) {
         bool surgeOn = m_system.db().settings.surgeEnabled;
         if (ImGui::Checkbox("Enable Dynamic Surge Yield Management", &surgeOn)) {
             m_system.setSurgeEnabled(surgeOn);
         }
         ImGui::Spacing();
+        ImGui::TextColored(pal.dimText, "GST / Hotel Tax Rate (%%)");
+        ImGui::SetNextItemWidth(std::min(420.0f, ImGui::GetContentRegionAvail().x));
         float taxPct = static_cast<float>(m_system.db().settings.taxRate * 100.0);
-        if (ImGui::SliderFloat("GST / Hotel Tax Rate (%)", &taxPct, 0.0f, 30.0f, "%.1f%%")) {
+        if (ImGui::SliderFloat("##GstTaxRate", &taxPct, 0.0f, 30.0f, "%.1f%%")) {
             m_system.setTaxRate(static_cast<double>(taxPct) / 100.0);
         }
         ImGui::Spacing();
-        if (ghostButton("Toggle Theme (Midnight Obsidian / Executive Pearl)", ImVec2(380.0f, 36.0f))) {
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        ImGui::TextColored(pal.dimText, "Text size (Ctrl+= / Ctrl+-)");
+        const char* scaleLabels[4] = {"90%", "100%", "115%", "130%"};
+        const int curScaleIdx = std::clamp(m_system.db().settings.textScaleIdx, 0, 3);
+        for (int i = 0; i < 4; ++i) {
+            if (i > 0) { ImGui::SameLine(); }
+            const bool active = (i == curScaleIdx);
+            const bool clicked = active
+                                     ? primaryButton(scaleLabels[i], ImVec2(0.0f, 34.0f))
+                                     : ghostButton(scaleLabels[i], ImVec2(0.0f, 34.0f));
+            if (clicked && !active) {
+                m_system.db().settings.textScaleIdx = i;
+                m_system.fileManager().saveSettings(m_system.db().settings);
+            }
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        if (ghostButton("Toggle Theme (Midnight Obsidian / Executive Pearl)", ImVec2(0.0f, 36.0f))) {
             m_theme.toggleTheme();
             m_system.db().settings.themeChoice = (m_theme.getCurrentMode() == ThemeMode::ExecutivePearl) ? 1 : 0;
             m_system.fileManager().saveSettings(m_system.db().settings);
@@ -915,15 +997,15 @@ void GuiRenderer::renderVivaToolsScreen() {
                         "6 arrivals, 5 departures, 4 Kanban orders, 2 waitlist entries & 66 valid SHA-256 audit entries."
                     );
                     ImGui::Spacing();
-                    if (primaryButton("Seed Viva Demo Data", ImVec2(210.0f, 38.0f))) {
+                    if (primaryButton("Seed Viva Demo Data", ImVec2(0.0f, 38.0f))) {
                         m_adminOpsState.openSeedConfirmModal = true;
                     }
                     ImGui::SameLine();
-                    if (dangerButton("Reset Clean State", ImVec2(175.0f, 38.0f))) {
+                    if (dangerButton("Reset Clean State", ImVec2(0.0f, 38.0f))) {
                         m_adminOpsState.openResetStep1Modal = true;
                     }
                     ImGui::Spacing();
-                    if (ghostButton("Run Night Audit Closeout", ImVec2(210.0f, 34.0f))) {
+                    if (ghostButton("Run Night Audit Closeout", ImVec2(0.0f, 34.0f))) {
                         m_system.runNightAudit(&m_adminOpsState.lastNightAuditPath, &m_adminOpsState.lastNightAuditSummary);
                     }
                 }
@@ -938,11 +1020,11 @@ void GuiRenderer::renderVivaToolsScreen() {
                     );
                     ImGui::Spacing();
                     if (!m_demoState.active) {
-                        if (primaryButton("Start Guided Demo (90s)", ImVec2(230.0f, 40.0f))) {
+                        if (primaryButton("Start Guided Demo (90s)", ImVec2(0.0f, 40.0f))) {
                             startGuidedDemo();
                         }
                     } else {
-                        if (dangerButton("Stop Guided Demo", ImVec2(200.0f, 40.0f))) {
+                        if (dangerButton("Stop Guided Demo", ImVec2(0.0f, 40.0f))) {
                             m_demoState.active = false;
                             Toast::push(NoticeType::Info, "Guided Demo Stopped", "Returned to manual control.");
                         }
@@ -965,12 +1047,12 @@ void GuiRenderer::renderVivaToolsScreen() {
                 ImGui::Separator();
                 ImGui::TextWrapped("A snapshot backup will be saved first, then data/ will be populated with the full Viva Demo dataset. Proceed?");
                 ImGui::Spacing();
-                if (primaryButton("Backup & Seed Demo Data", ImVec2(210.0f, 36.0f))) {
+                if (primaryButton("Backup & Seed Demo Data", ImVec2(0.0f, 36.0f))) {
                     m_system.seedVivaDemoData();
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::SameLine();
-                if (ghostButton("Cancel", ImVec2(100.0f, 36.0f))) { ImGui::CloseCurrentPopup(); }
+                if (ghostButton("Cancel", ImVec2(0.0f, 36.0f))) { ImGui::CloseCurrentPopup(); }
                 ImGui::EndPopup();
             }
 
@@ -985,12 +1067,12 @@ void GuiRenderer::renderVivaToolsScreen() {
                 ImGui::Separator();
                 ImGui::TextWrapped("This will wipe all guests, bookings, invoices, tasks, and statistics, leaving only 50 empty rooms and 3 default users.");
                 ImGui::Spacing();
-                if (dangerButton("Continue to Final Confirm ->", ImVec2(225.0f, 36.0f))) {
+                if (dangerButton("Continue to Final Confirm ->", ImVec2(0.0f, 36.0f))) {
                     ImGui::CloseCurrentPopup();
                     m_adminOpsState.openResetStep2Modal = true;
                 }
                 ImGui::SameLine();
-                if (ghostButton("Cancel", ImVec2(100.0f, 36.0f))) { ImGui::CloseCurrentPopup(); }
+                if (ghostButton("Cancel", ImVec2(0.0f, 36.0f))) { ImGui::CloseCurrentPopup(); }
                 ImGui::EndPopup();
             }
 
@@ -1004,12 +1086,12 @@ void GuiRenderer::renderVivaToolsScreen() {
                 ImGui::Separator();
                 ImGui::TextWrapped("Are you absolutely sure you want to wipe data/ and reset to clean state?");
                 ImGui::Spacing();
-                if (dangerButton("Yes, Wipe & Reset Now", ImVec2(210.0f, 36.0f))) {
+                if (dangerButton("Yes, Wipe & Reset Now", ImVec2(0.0f, 36.0f))) {
                     m_system.resetCleanState();
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::SameLine();
-                if (ghostButton("Abort", ImVec2(100.0f, 36.0f))) { ImGui::CloseCurrentPopup(); }
+                if (ghostButton("Abort", ImVec2(0.0f, 36.0f))) { ImGui::CloseCurrentPopup(); }
                 ImGui::EndPopup();
             }
 
@@ -1065,7 +1147,7 @@ void GuiRenderer::renderVivaToolsScreen() {
                     w.budget = wb; w.floor = wf; w.view = wv; w.elevator = we; w.noise = wn; w.bed = wbed;
                     w.normalize();
                 }
-                if (ghostButton("Reset Default Weights (0.30/0.15/0.20/0.10/0.10/0.15)", ImVec2(390.0f, 30.0f))) {
+                if (ghostButton("Reset Default Weights (0.30/0.15/0.20/0.10/0.10/0.15)", ImVec2(0.0f, 32.0f))) {
                     w = RecommenderWeights{};
                 }
             }
@@ -1075,7 +1157,7 @@ void GuiRenderer::renderVivaToolsScreen() {
 
         // TAB 2: Sorting Micro-Benchmarks (100 / 1,000 / 10,000)
         if (ImGui::BeginTabItem("Sorting Micro-Benchmark")) {
-            if (primaryButton("Run MergeSort vs QuickSort vs std::sort (100 / 1,000 / 10,000)", ImVec2(450.0f, 38.0f))) {
+            if (primaryButton("Run MergeSort vs QuickSort vs std::sort (100 / 1,000 / 10,000)", ImVec2(0.0f, 38.0f))) {
                 m_xrayState.benchmarks = runSortingMicroBenchmarks();
                 Toast::push(NoticeType::Success, "Benchmark Complete", "Verified exact match with std::sort across all 3 sizes.");
             }
@@ -1112,29 +1194,29 @@ void GuiRenderer::renderVivaToolsScreen() {
             if (m_xrayState.visSteps.empty()) {
                 m_xrayState.visSteps = recordMergeSortSteps({64, 25, 82, 12, 47, 91, 33, 58, 19, 74, 41, 68});
             }
-            if (ghostButton("Load MergeSort Demo", ImVec2(170.0f, 34.0f))) {
+            if (ghostButton("Load MergeSort Demo", ImVec2(0.0f, 34.0f))) {
                 m_xrayState.visMode = 0;
                 m_xrayState.visSteps = recordMergeSortSteps({64, 25, 82, 12, 47, 91, 33, 58, 19, 74, 41, 68});
                 m_xrayState.visStepIdx = 0;
                 m_xrayState.visPlaying = false;
             }
             ImGui::SameLine();
-            if (ghostButton("Load Min-Heap Demo", ImVec2(170.0f, 34.0f))) {
+            if (ghostButton("Load Min-Heap Demo", ImVec2(0.0f, 34.0f))) {
                 m_xrayState.visMode = 1;
                 m_xrayState.visSteps = recordMinHeapSteps({42, 18, 65, 9, 31, 5, 27, 14, 52, 3});
                 m_xrayState.visStepIdx = 0;
                 m_xrayState.visPlaying = false;
             }
             ImGui::SameLine();
-            if (primaryButton(m_xrayState.visPlaying ? "Pause" : "Auto-Play", ImVec2(110.0f, 34.0f))) {
+            if (primaryButton(m_xrayState.visPlaying ? "Pause" : "Auto-Play", ImVec2(0.0f, 34.0f))) {
                 m_xrayState.visPlaying = !m_xrayState.visPlaying;
             }
             ImGui::SameLine();
-            if (ghostButton("<- Step", ImVec2(80.0f, 34.0f), m_xrayState.visStepIdx > 0)) {
+            if (ghostButton("<- Step", ImVec2(0.0f, 34.0f), m_xrayState.visStepIdx > 0)) {
                 --m_xrayState.visStepIdx;
             }
             ImGui::SameLine();
-            if (ghostButton("Step ->", ImVec2(80.0f, 34.0f), m_xrayState.visStepIdx + 1 < static_cast<int>(m_xrayState.visSteps.size()))) {
+            if (ghostButton("Step ->", ImVec2(0.0f, 34.0f), m_xrayState.visStepIdx + 1 < static_cast<int>(m_xrayState.visSteps.size()))) {
                 ++m_xrayState.visStepIdx;
             }
 
@@ -1185,7 +1267,7 @@ void GuiRenderer::renderVivaToolsScreen() {
 
         // TAB 4: Startup Self-Test (Section 11)
         if (ImGui::BeginTabItem("Self-Test Suite")) {
-            if (primaryButton("Re-Run All 15 Self-Tests Now", ImVec2(240.0f, 34.0f))) {
+            if (primaryButton("Re-Run All 15 Self-Tests Now", ImVec2(0.0f, 34.0f))) {
                 m_startupSelfTests = runAllSelfTests(false);
                 const auto p3 = HotelSystem::runPhase3SelfTests(false);
                 m_startupSelfTests.insert(m_startupSelfTests.end(), p3.begin(), p3.end());
@@ -1431,15 +1513,16 @@ void GuiRenderer::renderShortcutsOverlay() {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
 
     ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(480.0f, 340.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(560.0f, 400.0f), ImGuiCond_Always);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, pal.panel);
     ImGui::PushStyleColor(ImGuiCol_Border, pal.accent);
 
     if (ImGui::Begin("Keyboard Shortcuts (F1)", &m_showShortcutsOverlay, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
-        const char* keys[7] = {"Ctrl + K", "Ctrl + T", "Ctrl + Z", "Ctrl + Y", "F1", "Esc", "Up / Down / Enter"};
-        const char* desc[7] = {
+        const char* keys[8] = {"Ctrl + K", "Ctrl + T", "Ctrl + = / -", "Ctrl + Z", "Ctrl + Y", "F1", "Esc", "Up / Down / Enter"};
+        const char* desc[8] = {
             "Open Command Palette (Levenshtein fuzzy search)",
             "Toggle Theme (Midnight Obsidian <-> Executive Pearl)",
+            "Increase / Decrease Text Size (90% to 130%)",
             "Undo last room status, swap, charge, or date edit",
             "Redo reverted command",
             "Toggle this Keyboard Shortcuts Cheat Sheet",
@@ -1448,10 +1531,10 @@ void GuiRenderer::renderShortcutsOverlay() {
         };
 
         if (ImGui::BeginTable("##ShortcutsTbl", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-            ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthFixed, 145.0f);
+            ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthFixed, 165.0f);
             ImGui::TableSetupColumn("Action");
             ImGui::TableHeadersRow();
-            for (int i = 0; i < 7; ++i) {
+            for (int i = 0; i < 8; ++i) {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0); drawBadge(keys[i], pal.accent);
                 ImGui::TableSetColumnIndex(1); ImGui::Text("%s", desc[i]);
@@ -1570,11 +1653,11 @@ void GuiRenderer::updateAndRenderGuidedDemo(float deltaTime) {
         const float prog = std::clamp(m_demoState.elapsed / 90.0f, 0.0f, 1.0f);
         ImGui::ProgressBar(prog, ImVec2(kBarW - 235.0f, 12.0f), "");
         ImGui::SameLine();
-        if (ghostButton("Next Step", ImVec2(95.0f, 24.0f))) {
+        if (ghostButton("Next Step", ImVec2(0.0f, 28.0f))) {
             m_demoState.elapsed = static_cast<float>(stage + 1) * 12.85f + 0.05f;
         }
         ImGui::SameLine();
-        if (dangerButton("Stop", ImVec2(72.0f, 24.0f))) {
+        if (dangerButton("Stop", ImVec2(0.0f, 28.0f))) {
             m_demoState.active = false;
         }
     }

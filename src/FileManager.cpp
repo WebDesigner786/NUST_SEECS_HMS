@@ -1704,7 +1704,6 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
     createBackupSnapshot(); // Section 10: backup first
 
     const int32_t today = DateUtil::todayDayNumber();
-    const long long baseTs = static_cast<long long>(std::time(nullptr)) - (30LL * 86400LL);
 
     db.rooms    = generateDefaultRooms();
     db.users    = generateDefaultUsers();
@@ -1822,12 +1821,12 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         const bool wknd = DateUtil::isWeekendNight(dayNum);
         const double trend = 50.0 + static_cast<double>(89 - dOff) * 0.10; // 50% -> ~56%
         const double occPct = std::clamp(trend + (wknd ? 15.0 : 0.0) + static_cast<double>((dOff * 7) % 5) * 1.6, 38.0, 92.0);
-        const int occRooms = static_cast<int>(std::llround((occPct / 100.0) * 50.0));
         const double avgRate = wknd ? 15600.0 : 13200.0;
+        const int estNights = 5 + (dOff % 3); // matches 2 checkouts/day (~5-7 room-nights)
         DailyStat st{};
         st.day          = dayNum;
         st.occupancyPct = occPct;
-        st.revenue      = std::llround((static_cast<double>(occRooms) * avgRate * 0.34) / 10.0) * 10.0;
+        st.revenue      = std::llround((static_cast<double>(estNights) * avgRate * 1.18) / 10.0) * 10.0;
         st.checkins     = 3 + (dOff % 5);
         st.checkouts    = 3 + ((dOff + 2) % 4);
         db.stats.push_back(st);
@@ -1838,17 +1837,7 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         const bool wknd = DateUtil::isWeekendNight(dayNum);
         const double trend = static_cast<double>(29 - dOff) * 0.65; // Rising trend
         const double occPct = std::clamp(56.0 + trend + (wknd ? 14.0 : 0.0) + ((dOff % 3) * 2.5), 42.0, 94.0);
-        const int occRooms = static_cast<int>(std::llround((occPct / 100.0) * 50.0));
-        const double avgRate = wknd ? 16200.0 : 13800.0;
-        const double dayRev = std::llround((static_cast<double>(occRooms) * avgRate * 0.34) / 10.0) * 10.0;
-
-        DailyStat st{};
-        st.day          = dayNum;
-        st.occupancyPct = occPct;
-        st.revenue      = dayRev;
-        st.checkins     = 4 + (dOff % 5);
-        st.checkouts    = 3 + ((dOff + 1) % 5);
-        db.stats.push_back(st);
+        double dayInvoiceRevenue = 0.0;
 
         // Create 2 historical checked-out bookings + invoices per day so Billings & Analytics are richly populated
         for (int k = 0; k < 2; ++k) {
@@ -1904,7 +1893,17 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
             bk.invoiceId = inv.id;
             db.bookings.push_back(bk);
             db.invoices.push_back(inv);
+            dayInvoiceRevenue += total;
         }
+
+        // DailyStat revenue equals the exact sum of that day's invoices (no synthetic outlier)
+        DailyStat st{};
+        st.day          = dayNum;
+        st.occupancyPct = occPct;
+        st.revenue      = dayInvoiceRevenue;
+        st.checkins     = 4 + (dOff % 5);
+        st.checkouts    = 3 + ((dOff + 1) % 5);
+        db.stats.push_back(st);
     }
 
     // -------------------------------------------------------------------------
@@ -2000,17 +1999,77 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         }
     }
 
-    // Today's DailyStat row (76% occupancy)
-    db.stats.push_back(DailyStat{today, 235000.0, 76.0, 6, 5});
+    // Create 2 morning check-out invoices issued today (on rooms 38 & 39 which are now CleaningRequired)
+    // so Today's Revenue, ADR, and the last point of the 30-day revenue chart match the exact invoice sum.
+    double todayInvoiceRevenue = 0.0;
+    for (int k = 0; k < 2; ++k) {
+        const Room& rm = db.rooms[static_cast<std::size_t>(38 + k)];
+        const Guest& gu = db.guests[static_cast<std::size_t>(36 + k)]; // guests arriving today (abutting checkOutDay==today -> non-overlapping)
+        const int nights = 3;
+
+        Booking bk{};
+        bk.id              = nextBookingId++;
+        bk.guestId         = gu.id;
+        bk.roomId          = rm.id;
+        bk.checkInDay      = today - nights;
+        bk.checkOutDay     = today;
+        bk.checkInMinute   = 840;
+        bk.checkOutMinute  = 660;
+        bk.adults          = 2;
+        bk.children        = 0;
+        bk.status          = BookingStatus::CheckedOut;
+        bk.quotedRate      = rm.baseRate;
+        bk.surgeMultiplier = 1.10;
+        bk.createdDay      = bk.checkInDay - 2;
+        bk.addOns.push_back(AddOn{AddOnType::Dining, "Executive Breakfast", 1800.0, 2, today});
+
+        const double roomSub = bk.quotedRate * bk.surgeMultiplier * nights;
+        const double addSub  = 3600.0;
+        const double lDisc   = (gu.tier == LoyaltyTier::Platinum ? 0.15 : (gu.tier == LoyaltyTier::Gold ? 0.10 : (gu.tier == LoyaltyTier::Silver ? 0.05 : 0.0))) * roomSub;
+        const double taxable = std::max(0.0, roomSub + addSub - lDisc);
+        const double tax     = taxable * Cfg::TAX_RATE;
+        const double total   = static_cast<double>(std::llround(taxable + tax));
+
+        Invoice inv{};
+        inv.id              = nextInvoiceId++;
+        inv.number          = "INV-" + std::to_string(inv.id);
+        inv.bookingId       = bk.id;
+        inv.guestId         = gu.id;
+        inv.issuedDay       = today;
+        inv.nights          = nights;
+        inv.roomSubtotal    = roomSub;
+        inv.addOnSubtotal   = addSub;
+        inv.loyaltyDiscount = lDisc;
+        inv.promoDiscount   = 0.0;
+        inv.taxableAmount   = taxable;
+        inv.taxRate         = Cfg::TAX_RATE;
+        inv.taxAmount       = tax;
+        inv.grandTotal      = total;
+        inv.paid            = (k == 0);
+        inv.paymentMethod   = inv.paid ? "Card" : "Unpaid";
+
+        bk.invoiceId = inv.id;
+        db.bookings.push_back(bk);
+        db.invoices.push_back(inv);
+        todayInvoiceRevenue += total;
+    }
+
+    // Today's DailyStat row (76% occupancy, exact sum of today's invoices)
+    db.stats.push_back(DailyStat{today, todayInvoiceRevenue, 76.0, 6, 5});
 
     // Rooms 38..45 -> 8 CleaningRequired tasks; Rooms 46..48 -> 3 Maintenance tasks
+    // Spread createdDay/createdMinute across ~1 to 18 hours before "now" so heap priorities differ clearly.
+    const long long nowTotalMin = static_cast<long long>(today) * 1440LL + static_cast<long long>(DateUtil::currentMinuteOfDay());
+    const int cleanHoursAgo[8] = {1, 2, 4, 6, 8, 11, 14, 17};
     int nextTaskId = 1;
     const char* staffNames[4] = {"Imran Ali", "Sana Bibi", "Kashif Engineering", "Nadia Housekeeping"};
     for (int i = 38; i < 46; ++i) {
         Room& rm = db.rooms[static_cast<std::size_t>(i)];
         rm.status = RoomStatus::CleaningRequired;
-        rm.lastCheckoutDay = today;
-        rm.lastCheckoutMinute = std::max(60, DateUtil::currentMinuteOfDay() - ((i - 37) * 45));
+        const int idx = i - 38;
+        const long long createdTotal = nowTotalMin - static_cast<long long>(cleanHoursAgo[idx]) * 60LL - static_cast<long long>((idx * 17) % 45);
+        rm.lastCheckoutDay    = static_cast<int32_t>(createdTotal / 1440LL);
+        rm.lastCheckoutMinute = static_cast<int>(createdTotal % 1440LL);
 
         HousekeepingTask t{};
         t.id            = nextTaskId++;
@@ -2018,7 +2077,7 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         t.type          = TaskType::Cleaning;
         t.status        = (i == 38) ? TaskStatus::InProgress : TaskStatus::Queued;
         t.severity      = 0;
-        t.createdDay    = today;
+        t.createdDay    = rm.lastCheckoutDay;
         t.createdMinute = rm.lastCheckoutMinute;
         t.assignedTo    = staffNames[i % 4];
         t.note          = "Post-checkout deep cleaning & linen turnover";
@@ -2031,24 +2090,26 @@ bool FileManager::seedVivaData(HotelDatabase& db, int actorUserId, const std::st
         "Smart keycard door lock battery low"
     };
     const int maintSevs[3] = {5, 4, 3};
+    const int maintHoursAgo[3] = {2, 9, 18};
     for (int k = 0; k < 3; ++k) {
         Room& rm = db.rooms[static_cast<std::size_t>(46 + k)];
         rm.status = RoomStatus::Maintenance;
+        const long long createdTotal = nowTotalMin - static_cast<long long>(maintHoursAgo[k]) * 60LL - static_cast<long long>(k * 20);
         HousekeepingTask t{};
         t.id            = nextTaskId++;
         t.roomId        = rm.id;
         t.type          = TaskType::Maintenance;
         t.status        = TaskStatus::Queued;
         t.severity      = maintSevs[k];
-        t.createdDay    = today;
-        t.createdMinute = std::max(60, DateUtil::currentMinuteOfDay() - (k * 60 + 30));
+        t.createdDay    = static_cast<int32_t>(createdTotal / 1440LL);
+        t.createdMinute = static_cast<int>(createdTotal % 1440LL);
         t.assignedTo    = "Kashif Engineering";
         t.note          = maintNotes[k];
         db.tasks.push_back(t);
     }
 
     // 4 Pending Service Orders (Kanban Ordered / Preparing)
-    const int activeBookingStart = nextBookingId - 38;
+    const int activeBookingStart = nextBookingId - 40;
     db.orders.push_back(ServiceOrder{1, activeBookingStart + 0, AddOnType::Dining,    "Peshawari Karahi Platter", 2, 2800.0, 0});
     db.orders.push_back(ServiceOrder{2, activeBookingStart + 2, AddOnType::Laundry,   "Express Suit Dry Cleaning", 1, 1600.0, 0});
     db.orders.push_back(ServiceOrder{3, activeBookingStart + 4, AddOnType::Spa,       "Aromatherapy Spa Session",  1, 5500.0, 1});

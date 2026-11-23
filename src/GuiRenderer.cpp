@@ -338,6 +338,20 @@ void GuiRenderer::handleGlobalShortcuts() {
         m_system.db().settings.themeChoice = (m_theme.getCurrentMode() == ThemeMode::ExecutivePearl) ? 1 : 0;
         m_system.fileManager().saveSettings(m_system.db().settings);
     }
+    if (io.KeyCtrl && (ImGui::IsKeyPressed(ImGuiKey_Equal, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadAdd, false))) {
+        int& idx = m_system.db().settings.textScaleIdx;
+        if (idx < 3) {
+            ++idx;
+            m_system.fileManager().saveSettings(m_system.db().settings);
+        }
+    }
+    if (io.KeyCtrl && (ImGui::IsKeyPressed(ImGuiKey_Minus, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadSubtract, false))) {
+        int& idx = m_system.db().settings.textScaleIdx;
+        if (idx > 0) {
+            --idx;
+            m_system.fileManager().saveSettings(m_system.db().settings);
+        }
+    }
     if (ImGui::IsKeyPressed(ImGuiKey_F1, false)) {
         m_showShortcutsOverlay = !m_showShortcutsOverlay;
     }
@@ -366,6 +380,10 @@ void GuiRenderer::handleGlobalShortcuts() {
  * Big-O: O(Active Screen Complexity).
  */
 void GuiRenderer::renderFrame(float deltaTime) {
+    static constexpr float kTextScales[4] = {0.90f, 1.00f, 1.15f, 1.30f};
+    const int scaleIdx = std::clamp(m_system.db().settings.textScaleIdx, 0, 3);
+    ImGui::GetIO().FontGlobalScale = kTextScales[scaleIdx];
+
     const float dt = std::clamp(deltaTime, 0.0f, 0.1f);
     m_system.tick(static_cast<double>(dt));
     m_theme.update(dt);
@@ -549,8 +567,10 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
         }
 
         // Top-right quick theme toggle on login screen
-        ImGui::SetCursorScreenPos(ImVec2(vp->Pos.x + vp->Size.x - 165.0f, vp->Pos.y + 20.0f));
-        if (ghostButton(m_theme.getCurrentMode() == ThemeMode::MidnightObsidian ? "Light Theme" : "Dark Theme", ImVec2(140.0f, 36.0f))) {
+        const char* loginThemeLbl = (m_theme.getCurrentMode() == ThemeMode::MidnightObsidian) ? "Light Theme" : "Dark Theme";
+        const float loginThemeW = visibleTextSize(loginThemeLbl).x + 28.0f;
+        ImGui::SetCursorScreenPos(ImVec2(vp->Pos.x + vp->Size.x - loginThemeW - 24.0f, vp->Pos.y + 20.0f));
+        if (ghostButton(loginThemeLbl, ImVec2(loginThemeW, 36.0f))) {
             m_theme.toggleTheme();
         }
 
@@ -631,12 +651,14 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
         ImGui::Spacing();
         ImGui::TextColored(pal.dimText, "Password");
         const float availW = ImGui::GetContentRegionAvail().x;
-        ImGui::SetNextItemWidth(availW - 84.0f);
+        const char* showLbl = m_showPassword ? "Hide" : "Show";
+        const float showBtnW = std::max(visibleTextSize("Show").x, visibleTextSize("Hide").x) + 26.0f;
+        ImGui::SetNextItemWidth(std::max(120.0f, availW - showBtnW - ImGui::GetStyle().ItemSpacing.x));
         const ImGuiInputTextFlags passFlags =
             ImGuiInputTextFlags_EnterReturnsTrue | (m_showPassword ? 0 : ImGuiInputTextFlags_Password);
         enterPressed |= ImGui::InputTextWithHint("##LoginPass", "Enter password", m_loginPassBuf, sizeof(m_loginPassBuf), passFlags);
         ImGui::SameLine();
-        if (ghostButton(m_showPassword ? "Hide" : "Show", ImVec2(74.0f, 34.0f))) {
+        if (ghostButton(showLbl, ImVec2(showBtnW, 34.0f))) {
             m_showPassword = !m_showPassword;
         }
 
@@ -765,7 +787,7 @@ void GuiRenderer::renderRoleAllowedNavItems(Role role, std::vector<NavItemSpec>&
  */
 void GuiRenderer::renderAuthenticatedShell(float deltaTime) {
     constexpr float kTopBarH    = 56.0f;
-    constexpr float kStatusBarH = 26.0f;
+    constexpr float kStatusBarH = 30.0f;
 
     // Smoothly animate sidebar width between 230px and 64px
     const float targetSidebarW = m_sidebarCollapsed ? 64.0f : 230.0f;
@@ -824,7 +846,7 @@ void GuiRenderer::renderTopBar(float height) {
                                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar;
     if (ImGui::Begin("##TopBar", nullptr, flags)) {
         // Sidebar collapse button
-        if (ghostButton(m_sidebarCollapsed ? ">>" : "<<", ImVec2(38.0f, 34.0f))) {
+        if (ghostButton(m_sidebarCollapsed ? ">>" : "<<", ImVec2(0.0f, 34.0f))) {
             m_sidebarCollapsed = !m_sidebarCollapsed;
         }
         drawTooltip(m_sidebarCollapsed ? "Expand Navigation Sidebar" : "Collapse to Icon Rail");
@@ -837,7 +859,7 @@ void GuiRenderer::renderTopBar(float height) {
 
         // Undo / Redo indicator in toolbar (Section 9.10 #2)
         if (m_system.canUndo()) {
-            ImGui::SameLine(0.0f, 18.0f);
+            ImGui::SameLine(0.0f, 16.0f);
             const std::string undoLabel = "Undo: " + m_system.lastUndoActionName();
             if (ghostButton(undoLabel.c_str(), ImVec2(0.0f, 32.0f))) {
                 m_system.undo();
@@ -845,16 +867,26 @@ void GuiRenderer::renderTopBar(float height) {
             drawTooltip("Ctrl+Z to Undo last action");
         }
 
-        // Right-aligned toolbar cluster
-        const float rightStart = vp->Size.x - 585.0f;
+        // Right-aligned toolbar cluster (measured dynamically so search & buttons never clip)
+        const char* searchHint = "Search (Ctrl+K)";
+        const float searchW = std::max(220.0f, visibleTextSize(searchHint).x + 44.0f);
+        const std::string clockStr = currentClockString();
+        const float clockW = ImGui::CalcTextSize(clockStr.c_str()).x;
+        const char* themeBtnTxt = (m_theme.getCurrentMode() == ThemeMode::MidnightObsidian) ? "Light" : "Dark";
+        const float themeW = visibleTextSize(themeBtnTxt).x + 24.0f;
+        const int unread = m_system.unreadNotificationCount();
+        const std::string bellLabel = (unread > 0) ? ("Alerts (" + std::to_string(unread) + ")") : "Alerts";
+        const float bellW = visibleTextSize(bellLabel.c_str()).x + 24.0f;
+        const float clusterW = searchW + 12.0f + clockW + 12.0f + themeW + 10.0f + bellW + 12.0f + 34.0f + 16.0f;
+        const float rightStart = vp->Size.x - clusterW;
         if (rightStart > ImGui::GetCursorPosX() + 10.0f) {
             ImGui::SameLine(rightStart);
         } else {
             ImGui::SameLine();
         }
 
-        ImGui::SetNextItemWidth(230.0f);
-        ImGui::InputTextWithHint("##GlobalSearch", "Search guests, rooms... (Ctrl+K)", m_globalSearchBuf, sizeof(m_globalSearchBuf));
+        ImGui::SetNextItemWidth(searchW);
+        ImGui::InputTextWithHint("##GlobalSearch", searchHint, m_globalSearchBuf, sizeof(m_globalSearchBuf));
         if (ImGui::IsItemActivated()) {
             m_cmdPalette.isOpen = true;
             m_cmdPalette.focusInput = true;
@@ -863,12 +895,11 @@ void GuiRenderer::renderTopBar(float height) {
 
         ImGui::SameLine(0.0f, 12.0f);
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(pal.dimText, "%s", currentClockString().c_str());
+        ImGui::TextColored(pal.dimText, "%s", clockStr.c_str());
 
         // Sun/Moon theme toggle button
         ImGui::SameLine(0.0f, 12.0f);
-        const char* themeBtnTxt = (m_theme.getCurrentMode() == ThemeMode::MidnightObsidian) ? "Light" : "Dark";
-        if (ghostButton(themeBtnTxt, ImVec2(62.0f, 34.0f))) {
+        if (ghostButton(themeBtnTxt, ImVec2(themeW, 34.0f))) {
             m_theme.toggleTheme();
             m_system.db().settings.themeChoice = (m_theme.getCurrentMode() == ThemeMode::ExecutivePearl) ? 1 : 0;
             m_system.fileManager().saveSettings(m_system.db().settings);
@@ -877,9 +908,7 @@ void GuiRenderer::renderTopBar(float height) {
 
         // Notification Bell with unread badge
         ImGui::SameLine(0.0f, 10.0f);
-        const int unread = m_system.unreadNotificationCount();
-        const std::string bellLabel = (unread > 0) ? ("Alerts (" + std::to_string(unread) + ")") : "Alerts";
-        if (ghostButton(bellLabel.c_str(), ImVec2(84.0f, 34.0f))) {
+        if (ghostButton(bellLabel.c_str(), ImVec2(bellW, 34.0f))) {
             ImGui::OpenPopup("##NotificationsPopup");
             m_system.markNotificationsRead();
         }
@@ -961,7 +990,7 @@ void GuiRenderer::renderSidebar(float topBarHeight, float statusBarHeight) {
         if (!m_sidebarCollapsed && m_sidebarWidth > 140.0f) {
             dl->AddText(ImVec2(sqMax.x + 10.0f, sqMin.y + 2.0f), ThemeEngine::vec4ToU32(pal.text), "NUST SEECS");
             if (m_fonts.captionFont != nullptr) {
-                dl->AddText(m_fonts.captionFont, 12.0f, ImVec2(sqMax.x + 10.0f, sqMin.y + 20.0f), ThemeEngine::vec4ToU32(pal.dimText), "Hotel Mgmt Suite");
+                dl->AddText(m_fonts.captionFont, 14.0f, ImVec2(sqMax.x + 10.0f, sqMin.y + 20.0f), ThemeEngine::vec4ToU32(pal.dimText), "Hotel Mgmt Suite");
             }
         }
         ImGui::Dummy(ImVec2(0.0f, 44.0f));
@@ -1169,7 +1198,7 @@ void GuiRenderer::renderUpcomingModulePreview(ScreenId screen) {
             "Core backend state in HotelSystem is active. Interactive GUI screen will be wired in its designated phase."
         );
         ImGui::Spacing();
-        if (primaryButton("Return to Dashboard", ImVec2(200.0f, 38.0f))) {
+        if (primaryButton("Return to Dashboard", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::Dashboard);
         }
     }
@@ -1338,11 +1367,16 @@ void GuiRenderer::drawKpiTile(
  * Big-O: O(1) time, O(1) space.
  */
 void GuiRenderer::drawBadge(const char* text, const ImVec4& bgColor, const ImVec4& textColor) {
+    const ThemePalette& pal = m_theme.getActivePalette();
+    const bool isLight = (pal.panel.x + pal.panel.y + pal.panel.z) > 1.5f;
+    const bool textIsWhite = (textColor.x > 0.9f && textColor.y > 0.9f && textColor.z > 0.9f);
+    const ImVec4 resolvedTextCol = (isLight && textIsWhite) ? pal.text : textColor;
+
     if (m_fonts.captionFont != nullptr) {
         ImGui::PushFont(m_fonts.captionFont);
     }
     const ImVec2 tSz = visibleTextSize(text);
-    const ImVec2 pad(9.0f, 3.0f);
+    const ImVec2 pad(10.0f, 4.0f);
     const ImVec2 pillSz(tSz.x + pad.x * 2.0f, tSz.y + pad.y * 2.0f);
     const ImVec2 pos = ImGui::GetCursorScreenPos();
 
@@ -1350,18 +1384,18 @@ void GuiRenderer::drawBadge(const char* text, const ImVec4& bgColor, const ImVec
     dl->AddRectFilled(
         pos,
         ImVec2(pos.x + pillSz.x, pos.y + pillSz.y),
-        ThemeEngine::vec4ToU32(ImVec4(bgColor.x, bgColor.y, bgColor.z, 0.22f)),
+        ThemeEngine::vec4ToU32(ImVec4(bgColor.x, bgColor.y, bgColor.z, isLight ? 0.18f : 0.22f)),
         pillSz.y * 0.5f
     );
     dl->AddRect(
         pos,
         ImVec2(pos.x + pillSz.x, pos.y + pillSz.y),
-        ThemeEngine::vec4ToU32(ImVec4(bgColor.x, bgColor.y, bgColor.z, 0.65f)),
+        ThemeEngine::vec4ToU32(ImVec4(bgColor.x, bgColor.y, bgColor.z, isLight ? 0.55f : 0.65f)),
         pillSz.y * 0.5f,
         0,
         1.0f
     );
-    dl->AddText(ImVec2(pos.x + pad.x, pos.y + pad.y), ThemeEngine::vec4ToU32(textColor), text, visibleLabelEnd(text));
+    dl->AddText(ImVec2(pos.x + pad.x, pos.y + pad.y), ThemeEngine::vec4ToU32(resolvedTextCol), text, visibleLabelEnd(text));
     ImGui::Dummy(pillSz);
 
     if (m_fonts.captionFont != nullptr) {

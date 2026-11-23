@@ -53,9 +53,9 @@ void GuiRenderer::drawRoomStatusDonutChart(const int statusCounts[5], int totalR
 
     const float denom = static_cast<float>(std::max(1, totalRooms));
     const ImVec2 origin = ImGui::GetCursorScreenPos();
-    const float radius = 64.0f;
-    const float thickness = 20.0f;
-    const ImVec2 center(origin.x + radius + 16.0f, origin.y + radius + 16.0f);
+    const float radius = 58.0f;
+    const float thickness = 18.0f;
+    const ImVec2 center(origin.x + radius + 14.0f, origin.y + radius + 14.0f);
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddCircle(center, radius, ThemeEngine::vec4ToU32(pal.surface), 64, thickness);
@@ -95,17 +95,20 @@ void GuiRenderer::drawRoomStatusDonutChart(const int statusCounts[5], int totalR
         ImGui::PopFont();
     }
 
-    // Legend column on the right of the donut
-    ImGui::SetCursorScreenPos(ImVec2(center.x + radius + 34.0f, origin.y + 16.0f));
+    // Legend column on the right of the donut (auto-sized, never clips Maintenance row)
+    ImGui::SetCursorScreenPos(ImVec2(center.x + radius + 24.0f, origin.y + 8.0f));
     ImGui::BeginGroup();
     for (int i = 0; i < 5; ++i) {
         drawStatusDot(sliceColors[i], 5.0f);
         ImGui::SameLine();
         const float pct = (100.0f * static_cast<float>(statusCounts[i])) / denom;
-        ImGui::TextColored(pal.text, "%-12s %2d (%.0f%%)", sliceLabels[i], statusCounts[i], pct);
+        ImGui::TextColored(pal.text, "%s: %d (%.0f%%)", sliceLabels[i], statusCounts[i], pct);
     }
     ImGui::EndGroup();
-    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + radius * 2.0f + 36.0f));
+    const float legendBottom = ImGui::GetItemRectMax().y;
+    const float donutBottom  = origin.y + radius * 2.0f + 32.0f;
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, std::max(legendBottom, donutBottom) + 4.0f));
+    ImGui::Dummy(ImVec2(1.0f, 1.0f));
 }
 
 /*
@@ -153,11 +156,13 @@ void GuiRenderer::renderAdminDashboard() {
     const int occupiedCount = statusCounts[static_cast<int>(RoomStatus::Occupied)];
     const double occPct = yield.occupancyRatio * 100.0;
 
-    // Compute Today's Revenue, ADR (revenue / occupied room-nights), RevPAR (revenue / total rooms)
+    // Compute Today's Revenue, ADR (revenue / invoiced room-nights), RevPAR (revenue / total rooms)
     double todayRevenue = 0.0;
+    int todayRoomNights = 0;
     for (const Invoice& inv : db.invoices) {
         if (inv.issuedDay == today) {
             todayRevenue += inv.grandTotal;
+            todayRoomNights += std::max(1, inv.nights);
         }
     }
     if (todayRevenue < 1.0) {
@@ -167,11 +172,12 @@ void GuiRenderer::renderAdminDashboard() {
                 todayRevenue += roundToNearest10PKR(b.quotedRate * b.surgeMultiplier);
             }
         }
+        todayRoomNights = occupiedCount;
     }
-    const double adr    = (occupiedCount > 0) ? (todayRevenue / static_cast<double>(occupiedCount)) : 0.0;
+    const double adr    = (todayRoomNights > 0) ? (todayRevenue / static_cast<double>(todayRoomNights)) : 0.0;
     const double revPar = todayRevenue / static_cast<double>(totalRooms);
 
-    // Gather 30-day revenue history & sparklines
+    // Gather 30-day revenue history & sparklines; keep last point equal to Today's Revenue
     std::vector<double> revHistory30;
     std::vector<float> revSpark;
     std::vector<float> occSpark;
@@ -181,6 +187,10 @@ void GuiRenderer::renderAdminDashboard() {
             revHistory30.push_back(db.stats[i].revenue);
             revSpark.push_back(static_cast<float>(db.stats[i].revenue));
             occSpark.push_back(static_cast<float>(db.stats[i].occupancyPct));
+        }
+        if (db.stats.back().day == today && !revHistory30.empty()) {
+            revHistory30.back() = todayRevenue;
+            revSpark.back() = static_cast<float>(todayRevenue);
         }
     } else {
         // Clean-state baseline sparkline when stats.dat has not been seeded yet
@@ -210,11 +220,13 @@ void GuiRenderer::renderAdminDashboard() {
 
     ImGui::Spacing();
 
-    // Charts Row: Revenue 30-day + 7-day forecast (left) & Occupancy by Floor (right)
+    // Charts Row: fill available height cleanly (no clipped axis labels, no nested scrollbars)
+    const float availAfterKpi = ImGui::GetContentRegionAvail().y;
+    const float chartCardH = std::max(310.0f, availAfterKpi * 0.50f);
     if (ImGui::BeginTable("##AdminChartsRow", 2, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##RevChartCard", "Revenue — Last 30 Days + 7-Day Linear Forecast", ImVec2(0.0f, 275.0f))) {
+        if (beginCard("##RevChartCard", "Revenue — Last 30 Days + 7-Day Linear Forecast", ImVec2(0.0f, chartCardH))) {
             const LinearRegressionForecast fc = compute7DayForecast(revHistory30, "Dashboard Revenue");
             const int histN = static_cast<int>(revHistory30.size());
             std::vector<double> xsHist(static_cast<std::size_t>(histN));
@@ -231,7 +243,8 @@ void GuiRenderer::renderAdminDashboard() {
                 ysFc[static_cast<std::size_t>(f + 1)] = fc.predicted7Days[static_cast<std::size_t>(f)];
             }
 
-            if (ImPlot::BeginPlot("##RevLinePlot", ImVec2(-1.0f, 210.0f))) {
+            const float plotH = std::max(220.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+            if (ImPlot::BeginPlot("##RevLinePlot", ImVec2(-1.0f, plotH))) {
                 ImPlot::SetupAxes("Day", "PKR");
                 ImPlot::SetupAxisLimits(ImAxis_X1, 1.0, static_cast<double>(histN + 8), ImPlotCond_Always);
                 ImPlot::SetNextLineStyle(pal.accent, 2.4f);
@@ -246,9 +259,10 @@ void GuiRenderer::renderAdminDashboard() {
         endCard();
 
         ImGui::TableSetColumnIndex(1);
-        if (beginCard("##FloorChartCard", "Occupancy by Floor (Floors 1–5)", ImVec2(0.0f, 275.0f))) {
+        if (beginCard("##FloorChartCard", "Occupancy by Floor (Floors 1–5)", ImVec2(0.0f, chartCardH))) {
             const double floorXs[5] = {1.0, 2.0, 3.0, 4.0, 5.0};
-            if (ImPlot::BeginPlot("##FloorBarPlot", ImVec2(-1.0f, 210.0f))) {
+            const float plotH = std::max(220.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+            if (ImPlot::BeginPlot("##FloorBarPlot", ImVec2(-1.0f, plotH))) {
                 ImPlot::SetupAxes("Floor", "Rooms");
                 ImPlot::SetupAxisLimits(ImAxis_X1, 0.3, 5.7, ImPlotCond_Always);
                 ImPlot::SetupAxisLimits(ImAxis_Y1, 0.0, 11.0, ImPlotCond_Always);
@@ -270,17 +284,17 @@ void GuiRenderer::renderAdminDashboard() {
 
     ImGui::Spacing();
 
-    // Bottom Row: Donut Chart + Today's Arrivals/Departures + Live Audit Activity Feed
+    // Bottom Row: Auto-height cards so nothing clips and no nested scrollbars appear (only main page scrolls)
     if (ImGui::BeginTable("##AdminBottomRow", 3, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##DonutCard", "Room Status Mix", ImVec2(0.0f, 230.0f))) {
+        if (beginCard("##DonutCard", "Room Status Mix", ImVec2(0.0f, 0.0f), true)) {
             drawRoomStatusDonutChart(statusCounts, totalRooms);
         }
         endCard();
 
         ImGui::TableSetColumnIndex(1);
-        if (beginCard("##ArrivalsDepsCard", "Today's Arrivals & Departures", ImVec2(0.0f, 230.0f))) {
+        if (beginCard("##ArrivalsDepsCard", "Today's Arrivals & Departures", ImVec2(0.0f, 0.0f), true)) {
             int arrivals = 0;
             int departures = 0;
             for (const Booking& b : db.bookings) {
@@ -302,17 +316,17 @@ void GuiRenderer::renderAdminDashboard() {
                 }
             }
             if (arrivals == 0 && departures == 0) {
-                drawEmptyState("No Arrivals or Departures Today", "Create bookings or run Viva Seeder in Phase 8.");
+                drawEmptyState("No Arrivals or Departures Today", "Create bookings or load sample data to populate today's schedule.");
             }
         }
         endCard();
 
         ImGui::TableSetColumnIndex(2);
-        if (beginCard("##ActivityFeedCard", "Live Audit Activity Feed", ImVec2(0.0f, 230.0f))) {
+        if (beginCard("##ActivityFeedCard", "Live Audit Activity Feed", ImVec2(0.0f, 0.0f), true)) {
             if (db.auditLog.empty()) {
                 drawEmptyState("No Audit Activity", "Actions are automatically hash-chained here.");
             } else {
-                const int startIdx = std::max(0, static_cast<int>(db.auditLog.size()) - 7);
+                const int startIdx = std::max(0, static_cast<int>(db.auditLog.size()) - 6);
                 for (int i = static_cast<int>(db.auditLog.size()) - 1; i >= startIdx; --i) {
                     const AuditEntry& e = db.auditLog[static_cast<std::size_t>(i)];
                     drawBadge(e.action.c_str(), pal.accent);
@@ -321,7 +335,9 @@ void GuiRenderer::renderAdminDashboard() {
                     if (m_fonts.captionFont != nullptr) {
                         ImGui::PushFont(m_fonts.captionFont);
                     }
-                    ImGui::TextColored(pal.dimText, "  %s", e.details.c_str());
+                    ImGui::PushStyleColor(ImGuiCol_Text, pal.dimText);
+                    ImGui::TextWrapped("  %s", e.details.c_str());
+                    ImGui::PopStyleColor();
                     if (m_fonts.captionFont != nullptr) {
                         ImGui::PopFont();
                     }
@@ -372,20 +388,20 @@ void GuiRenderer::renderReceptionistDashboard() {
     }
 
     ImGui::Spacing();
-    if (beginCard("##RecepQuickActions", "Quick Front Desk Actions", ImVec2(0.0f, 100.0f))) {
-        if (primaryButton("Smart Check-In Wizard", ImVec2(210.0f, 40.0f))) {
+    if (beginCard("##RecepQuickActions", "Quick Front Desk Actions", ImVec2(0.0f, 0.0f), true)) {
+        if (primaryButton("Smart Check-In Wizard", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::SmartCheckIn);
         }
         ImGui::SameLine();
-        if (ghostButton("Open Room Matrix", ImVec2(180.0f, 40.0f))) {
+        if (ghostButton("Open Room Matrix", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::RoomMatrix);
         }
         ImGui::SameLine();
-        if (ghostButton("Guest CRM Registry", ImVec2(180.0f, 40.0f))) {
+        if (ghostButton("Guest CRM Registry", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::Guests);
         }
         ImGui::SameLine();
-        if (ghostButton("View Waitlist", ImVec2(150.0f, 40.0f))) {
+        if (ghostButton("View Waitlist", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::Waitlist);
         }
     }

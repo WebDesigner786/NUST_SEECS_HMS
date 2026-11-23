@@ -175,8 +175,9 @@ void ThemeEngine::applyMetricsToImGuiStyle(ImGuiStyle& style) const {
     style.ScrollbarRounding = 12.0f;
 
     style.FramePadding      = ImVec2(12.0f, 8.0f);
-    style.ItemSpacing       = ImVec2(10.0f, 10.0f);
-    style.WindowPadding     = ImVec2(18.0f, 18.0f);
+    style.ItemSpacing       = ImVec2(12.0f, 8.0f);
+    style.WindowPadding     = ImVec2(16.0f, 16.0f);
+    style.CellPadding       = ImVec2(8.0f, 6.0f);
 
     style.WindowBorderSize  = 1.0f;
     style.FrameBorderSize   = 1.0f;
@@ -230,9 +231,12 @@ void ThemeEngine::applyPaletteToImGuiStyle(const ThemePalette& p, ImGuiStyle& st
     colors[ImGuiCol_ResizeGrip]            = p.surface;
     colors[ImGuiCol_ResizeGripHovered]     = p.accentHover;
     colors[ImGuiCol_ResizeGripActive]      = p.accentActive;
+    const bool isLight = (p.panel.x + p.panel.y + p.panel.z) > 1.5f;
     colors[ImGuiCol_Tab]                   = p.surface;
     colors[ImGuiCol_TabHovered]            = p.hover;
-    colors[ImGuiCol_TabSelected]           = p.accent;
+    colors[ImGuiCol_TabSelected]           = isLight
+                                                 ? ImVec4(p.accent.x, p.accent.y, p.accent.z, 0.22f)
+                                                 : p.accent;
     colors[ImGuiCol_TabDimmed]             = p.panel;
     colors[ImGuiCol_TabDimmedSelected]     = p.surface;
     colors[ImGuiCol_DockingPreview]        = ImVec4(p.accent.x, p.accent.y, p.accent.z, 0.55f);

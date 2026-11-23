@@ -108,15 +108,15 @@ void GuiRenderer::renderTimelineScreen() {
 
     // Controls bar: Scroll window, Zoom, Today button
     if (beginCard("##TimelineControls", nullptr, ImVec2(0.0f, 0.0f), true)) {
-        if (ghostButton("<< -7d", ImVec2(76.0f, 32.0f))) { m_timelineState.startDayOffset -= 7; }
+        if (ghostButton("<< -7d", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset -= 7; }
         ImGui::SameLine();
-        if (ghostButton("< -1d", ImVec2(66.0f, 32.0f))) { m_timelineState.startDayOffset -= 1; }
+        if (ghostButton("< -1d", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset -= 1; }
         ImGui::SameLine();
-        if (primaryButton("Today", ImVec2(76.0f, 32.0f))) { m_timelineState.startDayOffset = -3; }
+        if (primaryButton("Today", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset = -3; }
         ImGui::SameLine();
-        if (ghostButton("+1d >", ImVec2(66.0f, 32.0f))) { m_timelineState.startDayOffset += 1; }
+        if (ghostButton("+1d >", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset += 1; }
         ImGui::SameLine();
-        if (ghostButton("+7d >>", ImVec2(76.0f, 32.0f))) { m_timelineState.startDayOffset += 7; }
+        if (ghostButton("+7d >>", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset += 7; }
 
         ImGui::SameLine(0.0f, 22.0f);
         ImGui::SetNextItemWidth(160.0f);
@@ -171,8 +171,8 @@ void GuiRenderer::renderTimelineScreen() {
             if (m_fonts.captionFont != nullptr) {
                 dl->AddText(
                     m_fonts.captionFont,
-                    11.0f,
-                    ImVec2(x + 3.0f, origin.y + 10.0f),
+                    14.0f,
+                    ImVec2(x + 3.0f, origin.y + 9.0f),
                     ThemeEngine::vec4ToU32(isTodayCol ? pal.accent : pal.dimText),
                     dayLbl
                 );
@@ -327,7 +327,7 @@ void GuiRenderer::renderTimelineScreen() {
                     const Guest* g = m_system.findGuestById(b.guestId);
                     if (g != nullptr && barW > 36.0f && m_fonts.captionFont != nullptr) {
                         dl->PushClipRect(ImVec2(bx0 + 4.0f, rowPos.y + 3.0f), ImVec2(bx0 + barW - 6.0f, rowPos.y + kRowH - 5.0f), true);
-                        dl->AddText(m_fonts.captionFont, 12.0f, ImVec2(bx0 + 6.0f, rowPos.y + 7.0f), IM_COL32(255, 255, 255, 255), g->fullName.c_str());
+                        dl->AddText(m_fonts.captionFont, 14.0f, ImVec2(bx0 + 6.0f, rowPos.y + 6.0f), IM_COL32(255, 255, 255, 255), g->fullName.c_str());
                         dl->PopClipRect();
                     }
                 }
@@ -365,7 +365,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
         ImGui::SetNextItemWidth(320.0f);
         ImGui::InputTextWithHint("##CrmSearch", "Filter by name, CNIC, passport, phone, email...", m_crmState.searchBuf, sizeof(m_crmState.searchBuf));
         ImGui::SameLine();
-        if (primaryButton("+ Register Guest", ImVec2(170.0f, 34.0f))) {
+        if (primaryButton("+ Register Guest", ImVec2(0.0f, 34.0f))) {
             m_crmState.openAddModal = true;
             m_crmState.formName[0] = '\0';
             m_crmState.formCnic[0] = '\0';
@@ -473,14 +473,14 @@ void GuiRenderer::renderGuestsCrmScreen() {
 
             // Pagination controls
             ImGui::Spacing();
-            if (ghostButton("<- Prev", ImVec2(90.0f, 30.0f), m_crmState.currentPage > 0)) {
+            if (ghostButton("<- Prev", ImVec2(0.0f, 30.0f), m_crmState.currentPage > 0)) {
                 --m_crmState.currentPage;
             }
             ImGui::SameLine();
             ImGui::AlignTextToFramePadding();
             ImGui::TextColored(pal.dimText, "Page %d / %d (%zu guests)", m_crmState.currentPage + 1, totalPages, filtered.size());
             ImGui::SameLine();
-            if (ghostButton("Next ->", ImVec2(90.0f, 30.0f), m_crmState.currentPage + 1 < totalPages)) {
+            if (ghostButton("Next ->", ImVec2(0.0f, 30.0f), m_crmState.currentPage + 1 < totalPages)) {
                 ++m_crmState.currentPage;
             }
         }
@@ -605,7 +605,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
 
         ImGui::Spacing();
         const bool canSave = nameOk && idOk && phoneOk && emailOk;
-        if (primaryButton("Save Guest", ImVec2(140.0f, 36.0f), canSave)) {
+        if (primaryButton("Save Guest", ImVec2(0.0f, 36.0f), canSave)) {
             Guest ng{};
             ng.fullName        = m_crmState.formName;
             ng.isForeign       = m_crmState.formIsForeign;
@@ -626,7 +626,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
             }
         }
         ImGui::SameLine();
-        if (ghostButton("Cancel", ImVec2(110.0f, 36.0f))) {
+        if (ghostButton("Cancel", ImVec2(0.0f, 36.0f))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -660,7 +660,7 @@ void GuiRenderer::renderBookingsScreen() {
         ImGui::SetNextItemWidth(260.0f);
         ImGui::InputTextWithHint("##BkSearch", "Search guest name or room #...", m_opsState.bookingSearchBuf, sizeof(m_opsState.bookingSearchBuf));
         ImGui::SameLine();
-        if (primaryButton("+ New Booking (Wizard)", ImVec2(200.0f, 34.0f))) {
+        if (primaryButton("+ New Booking (Wizard)", ImVec2(0.0f, 34.0f))) {
             navigateTo(ScreenId::SmartCheckIn);
         }
     }
@@ -668,16 +668,28 @@ void GuiRenderer::renderBookingsScreen() {
     ImGui::Spacing();
 
     if (beginCard("##BookingsTableCard", "All Bookings", ImVec2(0.0f, 0.0f))) {
+        const int32_t today = DateUtil::todayDayNumber();
+        const float itemSp  = ImGui::GetStyle().ItemSpacing.x;
+        const float datesW  = visibleTextSize("2026-11-30 -> 2026-12-05").x + 18.0f;
+        const float rateW   = visibleTextSize("PKR 55,000 (x1.60)").x + 18.0f;
+        const float statusW = visibleTextSize("Checked Out").x + 30.0f;
+        const float ciW     = visibleTextSize("Check-In").x + 24.0f;
+        const float cxW     = visibleTextSize("Cancel").x + 22.0f;
+        const float nsW     = visibleTextSize("No-show").x + 22.0f;
+        const float coW     = visibleTextSize("Check-Out").x + 24.0f;
+        const float invW    = visibleTextSize("View Invoice").x + 24.0f;
+        const float actColW = std::max(ciW + cxW + nsW + itemSp * 2.0f, std::max(coW, invW)) + 16.0f;
+
         if (db.bookings.empty()) {
-            drawEmptyState("No Bookings Yet", "Use the Smart Check-In Wizard or Viva Demo Seeder to populate bookings.");
+            drawEmptyState("No Bookings Yet", "Use the Smart Check-In Wizard or load sample data to populate bookings.");
         } else if (ImGui::BeginTable("##BookingsTbl", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY)) {
-            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 54.0f);
+            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 56.0f);
             ImGui::TableSetupColumn("Guest");
-            ImGui::TableSetupColumn("Room", ImGuiTableColumnFlags_WidthFixed, 95.0f);
-            ImGui::TableSetupColumn("Stay Dates", ImGuiTableColumnFlags_WidthFixed, 195.0f);
-            ImGui::TableSetupColumn("Rate / Surge", ImGuiTableColumnFlags_WidthFixed, 145.0f);
-            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 105.0f);
-            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 235.0f);
+            ImGui::TableSetupColumn("Room", ImGuiTableColumnFlags_WidthFixed, 92.0f);
+            ImGui::TableSetupColumn("Stay Dates", ImGuiTableColumnFlags_WidthFixed, datesW);
+            ImGui::TableSetupColumn("Rate / Surge", ImGuiTableColumnFlags_WidthFixed, rateW);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, statusW);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, actColW);
             ImGui::TableHeadersRow();
 
             for (int i = static_cast<int>(db.bookings.size()) - 1; i >= 0; --i) {
@@ -707,17 +719,21 @@ void GuiRenderer::renderBookingsScreen() {
                 ImGui::TableSetColumnIndex(6);
 
                 if (b.status == BookingStatus::Reserved) {
+                    const bool canCheckIn = (b.checkInDay <= today);
                     char ciId[32]{}; std::snprintf(ciId, sizeof(ciId), "Check-In##BkCI%d", b.id);
-                    if (primaryButton(ciId, ImVec2(82.0f, 26.0f))) { m_system.checkInBooking(b.id); }
+                    if (primaryButton(ciId, ImVec2(ciW, 28.0f), canCheckIn)) { m_system.checkInBooking(b.id); }
+                    if (!canCheckIn && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("Arrival is on %s", DateUtil::formatDate(b.checkInDay).c_str());
+                    }
                     ImGui::SameLine();
                     char cxId[32]{}; std::snprintf(cxId, sizeof(cxId), "Cancel##BkCX%d", b.id);
-                    if (dangerButton(cxId, ImVec2(66.0f, 26.0f))) { m_system.cancelBooking(b.id, false); }
+                    if (dangerButton(cxId, ImVec2(cxW, 28.0f))) { m_system.cancelBooking(b.id, false); }
                     ImGui::SameLine();
-                    char nsId[32]{}; std::snprintf(nsId, sizeof(nsId), "NoShow##BkNS%d", b.id);
-                    if (ghostButton(nsId, ImVec2(68.0f, 26.0f))) { m_system.cancelBooking(b.id, true); }
+                    char nsId[32]{}; std::snprintf(nsId, sizeof(nsId), "No-show##BkNS%d", b.id);
+                    if (ghostButton(nsId, ImVec2(nsW, 28.0f))) { m_system.cancelBooking(b.id, true); }
                 } else if (b.status == BookingStatus::CheckedIn) {
                     char coId[32]{}; std::snprintf(coId, sizeof(coId), "Check-Out##BkCO%d", b.id);
-                    if (primaryButton(coId, ImVec2(94.0f, 26.0f))) {
+                    if (primaryButton(coId, ImVec2(coW, 28.0f))) {
                         const CheckOutResult co = m_system.checkOutBooking(b.id, DateUtil::currentMinuteOfDay(), "Card");
                         if (co.success) {
                             if (co.loyaltyPromoted) { triggerLoyaltyConfetti(); }
@@ -726,7 +742,7 @@ void GuiRenderer::renderBookingsScreen() {
                     }
                 } else if (b.invoiceId != -1) {
                     char invId[32]{}; std::snprintf(invId, sizeof(invId), "View Invoice##BkInv%d", b.id);
-                    if (ghostButton(invId, ImVec2(115.0f, 26.0f))) {
+                    if (ghostButton(invId, ImVec2(invW, 28.0f))) {
                         openInvoicePreview(b.invoiceId);
                     }
                 }
@@ -942,19 +958,19 @@ void GuiRenderer::renderInvoicePreviewModal() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (primaryButton("Open HTML in Browser", ImVec2(190.0f, 36.0f))) {
+        if (primaryButton("Open HTML in Browser", ImVec2(0.0f, 36.0f))) {
             openFileInDefaultBrowser(m_opsState.previewHtmlPath);
             Toast::push(NoticeType::Info, "Browser Launched", "Opened " + m_opsState.previewHtmlPath);
         }
         ImGui::SameLine();
-        if (ghostButton("Copy Path", ImVec2(115.0f, 36.0f))) {
+        if (ghostButton("Copy Path", ImVec2(0.0f, 36.0f))) {
             std::error_code ec;
             const std::string absPath = std::filesystem::absolute(m_opsState.previewHtmlPath, ec).string();
             ImGui::SetClipboardText(ec ? m_opsState.previewHtmlPath.c_str() : absPath.c_str());
             Toast::push(NoticeType::Success, "Path Copied", "Copied HTML receipt path to clipboard.");
         }
         ImGui::SameLine();
-        if (ghostButton("Close", ImVec2(95.0f, 36.0f))) {
+        if (ghostButton("Close", ImVec2(0.0f, 36.0f))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -1011,7 +1027,7 @@ void GuiRenderer::renderWaitlistScreen() {
         ImGui::SetNextItemWidth(120.0f);
         ImGui::InputFloat("Max PKR", &m_opsState.wlBudget, 0.0f, 0.0f, "%.0f");
         ImGui::SameLine();
-        if (primaryButton("Enqueue", ImVec2(105.0f, 34.0f), m_opsState.wlGuestId != -1)) {
+        if (primaryButton("Enqueue", ImVec2(0.0f, 34.0f), m_opsState.wlGuestId != -1)) {
             m_system.addToWaitlist(
                 m_opsState.wlGuestId,
                 static_cast<RoomType>(m_opsState.wlTypeIdx),
@@ -1051,7 +1067,7 @@ void GuiRenderer::renderWaitlistScreen() {
                 ImGui::TableSetColumnIndex(4); ImGui::Text("%s", formatPKR(wl.maxBudget).c_str());
                 ImGui::TableSetColumnIndex(5);
                 char bkId[32]{}; std::snprintf(bkId, sizeof(bkId), "Book Now##WlBk%d", wl.id);
-                if (primaryButton(bkId, ImVec2(88.0f, 26.0f))) {
+                if (primaryButton(bkId, ImVec2(0.0f, 28.0f))) {
                     m_wizardState = SmartCheckInState{};
                     m_wizardState.selectedGuestId = wl.guestId;
                     m_wizardState.checkInOffsetDays = std::max(0, wl.fromDay - today);
@@ -1063,7 +1079,7 @@ void GuiRenderer::renderWaitlistScreen() {
                 }
                 ImGui::SameLine();
                 char rmId[32]{}; std::snprintf(rmId, sizeof(rmId), "Remove##WlRm%d", wl.id);
-                if (dangerButton(rmId, ImVec2(76.0f, 26.0f))) {
+                if (dangerButton(rmId, ImVec2(0.0f, 28.0f))) {
                     m_system.removeWaitlistEntry(wl.id);
                 }
             }

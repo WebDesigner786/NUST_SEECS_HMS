@@ -265,7 +265,7 @@ void GuiRenderer::renderRoomMatrixScreen() {
         ImGui::SetNextItemWidth(260.0f);
         ImGui::InputTextWithHint("##FilterSearch", "Search room # or guest surname...", m_matrixState.searchBuf, sizeof(m_matrixState.searchBuf));
         ImGui::SameLine();
-        if (ghostButton("Reset Filters", ImVec2(120.0f, 34.0f))) {
+        if (ghostButton("Reset Filters", ImVec2(0.0f, 34.0f))) {
             for (int i = 0; i < 5; ++i) { m_matrixState.statusFilter[i] = true; }
             m_matrixState.typeFilterIndex = 0;
             m_matrixState.floorFilterIndex = 0;
@@ -279,11 +279,12 @@ void GuiRenderer::renderRoomMatrixScreen() {
     // Floor-plan grid card (Floor 5 at top down to Floor 1 at bottom)
     if (beginCard("##FloorPlanCanvas", nullptr, ImVec2(0.0f, 0.0f))) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        constexpr float kTileW = 92.0f;
-        constexpr float kTileH = 72.0f;
-        constexpr float kGap   = 8.0f;
-        constexpr float kStairW = 46.0f;
-        constexpr float kElevW  = 64.0f;
+        const ImVec2 canvasAvail = ImGui::GetContentRegionAvail();
+        constexpr float kGap    = 8.0f;
+        constexpr float kStairW = 54.0f;
+        constexpr float kElevW  = 68.0f;
+        const float kTileW = std::max(92.0f, (canvasAvail.x - kStairW * 2.0f - kElevW - kGap * 12.0f) / 10.0f);
+        const float kTileH = std::max(80.0f, std::min(118.0f, (canvasAvail.y - 165.0f) / static_cast<float>(Cfg::FLOORS)));
 
         for (int floor = Cfg::FLOORS; floor >= 1; --floor) {
             if (m_matrixState.floorFilterIndex != 0) {
@@ -321,7 +322,7 @@ void GuiRenderer::renderRoomMatrixScreen() {
                     );
                 }
                 if (m_fonts.captionFont != nullptr) {
-                    dl->AddText(m_fonts.captionFont, 11.0f, ImVec2(sMin.x + 7.0f, sMax.y - 18.0f), ThemeEngine::vec4ToU32(pal.dimText), "STAIR");
+                    dl->AddText(m_fonts.captionFont, 14.0f, ImVec2(sMin.x + 6.0f, sMax.y - 20.0f), ThemeEngine::vec4ToU32(pal.dimText), "STAIR");
                 }
                 cursorX += kStairW + kGap;
             }
@@ -339,7 +340,7 @@ void GuiRenderer::renderRoomMatrixScreen() {
                     dl->AddTriangleFilled(ImVec2(mx, eMin.y + 14.0f), ImVec2(mx - 6.0f, eMin.y + 23.0f), ImVec2(mx + 6.0f, eMin.y + 23.0f), ThemeEngine::vec4ToU32(pal.accent));
                     dl->AddTriangleFilled(ImVec2(mx, eMin.y + 39.0f), ImVec2(mx - 6.0f, eMin.y + 30.0f), ImVec2(mx + 6.0f, eMin.y + 30.0f), ThemeEngine::vec4ToU32(pal.secondaryAccent));
                     if (m_fonts.captionFont != nullptr) {
-                        dl->AddText(m_fonts.captionFont, 11.0f, ImVec2(eMin.x + 15.0f, eMax.y - 19.0f), ThemeEngine::vec4ToU32(pal.dimText), "ELEV");
+                        dl->AddText(m_fonts.captionFont, 14.0f, ImVec2(eMin.x + 14.0f, eMax.y - 20.0f), ThemeEngine::vec4ToU32(pal.dimText), "ELEV");
                     }
                     cursorX += kElevW + kGap;
                 }
@@ -445,13 +446,13 @@ void GuiRenderer::renderRoomMatrixScreen() {
                                                 ? extractSurname(currentGuest->fullName)
                                                 : std::string(toString(room->type));
                 if (m_fonts.captionFont != nullptr) {
-                    dl->AddText(m_fonts.captionFont, 12.0f, ImVec2(tMin.x + 10.0f, tMin.y + 34.0f), txtCol, caption.c_str());
+                    dl->AddText(m_fonts.captionFont, 14.0f, ImVec2(tMin.x + 10.0f, tMin.y + 34.0f), txtCol, caption.c_str());
                     const std::string rateShort = formatPKR(roundToNearest10PKR(room->baseRate * yield.surge));
                     dl->AddText(
                         m_fonts.captionFont,
-                        11.0f,
-                        ImVec2(tMin.x + 10.0f, tMin.y + 51.0f),
-                        IM_COL32(255, 255, 255, passesFilter ? 210 : 70),
+                        14.0f,
+                        ImVec2(tMin.x + 10.0f, tMin.y + 53.0f),
+                        IM_COL32(255, 255, 255, passesFilter ? 215 : 70),
                         rateShort.c_str()
                     );
                 }
@@ -498,7 +499,7 @@ void GuiRenderer::renderRoomMatrixScreen() {
                     );
                 }
                 if (m_fonts.captionFont != nullptr) {
-                    dl->AddText(m_fonts.captionFont, 11.0f, ImVec2(sMin.x + 7.0f, sMax.y - 18.0f), ThemeEngine::vec4ToU32(pal.dimText), "STAIR");
+                    dl->AddText(m_fonts.captionFont, 14.0f, ImVec2(sMin.x + 6.0f, sMax.y - 20.0f), ThemeEngine::vec4ToU32(pal.dimText), "STAIR");
                 }
             }
 
@@ -555,7 +556,7 @@ void GuiRenderer::renderRoomDetailModal() {
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f);
         drawBadge(toString(room->status), statusColor(room->status));
         ImGui::SameLine(ImGui::GetWindowWidth() - 96.0f);
-        if (ghostButton("Close", ImVec2(76.0f, 32.0f))) {
+        if (ghostButton("Close", ImVec2(0.0f, 32.0f))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::Separator();
@@ -735,7 +736,7 @@ void GuiRenderer::renderRoomDetailModal() {
             ImGui::SetNextItemWidth(180.0f);
             ImGui::Combo("Payment Method", &m_matrixState.checkoutPayMethodIdx, payMethods, 3);
             ImGui::SameLine();
-            if (primaryButton("Complete Check-Out", ImVec2(180.0f, 34.0f))) {
+            if (primaryButton("Complete Check-Out", ImVec2(0.0f, 34.0f))) {
                 const CheckOutResult co = m_system.checkOutBooking(
                     activeBooking->id,
                     DateUtil::currentMinuteOfDay(),
@@ -757,7 +758,7 @@ void GuiRenderer::renderRoomDetailModal() {
             ImGui::SetNextItemWidth(260.0f);
             ImGui::InputTextWithHint("##MaintNote", "Issue description (e.g. AC leak)...", m_matrixState.maintNoteBuf, sizeof(m_matrixState.maintNoteBuf));
             ImGui::SameLine();
-            if (dangerButton("Submit", ImVec2(100.0f, 34.0f))) {
+            if (dangerButton("Submit", ImVec2(0.0f, 34.0f))) {
                 const std::string note = m_matrixState.maintNoteBuf[0] ? m_matrixState.maintNoteBuf : "Maintenance inspection required";
                 m_system.dispatchHousekeepingTask(room->id, TaskType::Maintenance, m_matrixState.maintSeverity, "Engineering", note);
                 m_matrixState.maintNoteBuf[0] = '\0';
@@ -779,7 +780,7 @@ void GuiRenderer::renderRoomDetailModal() {
             ImGui::InputInt("Qty##ChgQ", &m_matrixState.chargeQty);
             m_matrixState.chargeQty = std::max(1, m_matrixState.chargeQty);
             ImGui::SameLine();
-            if (primaryButton("Post", ImVec2(76.0f, 34.0f))) {
+            if (primaryButton("Post", ImVec2(0.0f, 34.0f))) {
                 AddOn a{};
                 a.type        = static_cast<AddOnType>(m_matrixState.chargeTypeIdx);
                 a.description = m_matrixState.chargeDescBuf[0] ? m_matrixState.chargeDescBuf : addOnNames[m_matrixState.chargeTypeIdx];
@@ -894,13 +895,16 @@ void GuiRenderer::renderSmartCheckInScreen() {
         // STEP 1: Find or Register Guest (Fuzzy + Binary Search CNIC + Inline Form)
         // ---------------------------------------------------------------------
         if (m_wizardState.step == 0) {
-            ImGui::SetNextItemWidth(280.0f);
-            ImGui::InputTextWithHint("##WizFuzzy", "Fuzzy search guest by name / phone...", m_wizardState.guestSearchBuf, sizeof(m_wizardState.guestSearchBuf));
+            const char* fuzzyHint = "Search name or phone";
+            const float fuzzyW = std::max(240.0f, visibleTextSize(fuzzyHint).x + 40.0f);
+            ImGui::SetNextItemWidth(fuzzyW);
+            ImGui::InputTextWithHint("##WizFuzzy", fuzzyHint, m_wizardState.guestSearchBuf, sizeof(m_wizardState.guestSearchBuf));
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(210.0f);
-            ImGui::InputTextWithHint("##WizCnicBin", "Exact CNIC (Binary Search)...", m_wizardState.cnicExactBuf, sizeof(m_wizardState.cnicExactBuf));
+            const float cnicW = std::max(190.0f, visibleTextSize("35202-1234567-1").x + 36.0f);
+            ImGui::SetNextItemWidth(cnicW);
+            ImGui::InputTextWithHint("##WizCnicBin", "CNIC", m_wizardState.cnicExactBuf, sizeof(m_wizardState.cnicExactBuf));
             ImGui::SameLine();
-            if (ghostButton("Binary Search CNIC", ImVec2(165.0f, 34.0f))) {
+            if (ghostButton("Binary Search CNIC", ImVec2(0.0f, 34.0f))) {
                 const Guest* found = m_system.findGuestByCnicBinarySearch(m_wizardState.cnicExactBuf);
                 if (found != nullptr) {
                     m_wizardState.selectedGuestId = found->id;
@@ -910,7 +914,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                 }
             }
             ImGui::SameLine();
-            if (primaryButton(m_wizardState.showNewGuestForm ? "Hide New Guest Form" : "+ New Guest", ImVec2(170.0f, 34.0f))) {
+            if (primaryButton(m_wizardState.showNewGuestForm ? "Hide New Guest Form" : "+ New Guest", ImVec2(0.0f, 34.0f))) {
                 m_wizardState.showNewGuestForm = !m_wizardState.showNewGuestForm;
             }
 
@@ -966,7 +970,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                 }
 
                 const bool allValid = nameOk && idOk && phoneOk && emailOk;
-                if (primaryButton("Save & Select Guest", ImVec2(200.0f, 36.0f), allValid)) {
+                if (primaryButton("Save & Select Guest", ImVec2(0.0f, 36.0f), allValid)) {
                     Guest ng{};
                     ng.fullName    = m_wizardState.newNameBuf;
                     ng.isForeign   = m_wizardState.newIsForeign;
@@ -1024,7 +1028,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                     ImGui::TableSetColumnIndex(0);
                     char selId[32]{};
                     std::snprintf(selId, sizeof(selId), "%s##SelG%d", isSel ? "Selected" : "Select", g.id);
-                    if (isSel ? primaryButton(selId, ImVec2(76.0f, 26.0f)) : ghostButton(selId, ImVec2(76.0f, 26.0f))) {
+                    if (isSel ? primaryButton(selId, ImVec2(0.0f, 28.0f)) : ghostButton(selId, ImVec2(0.0f, 28.0f))) {
                         m_wizardState.selectedGuestId = g.id;
                     }
                     ImGui::TableSetColumnIndex(1); ImGui::Text("%s", g.fullName.c_str());
@@ -1036,7 +1040,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
             }
 
             ImGui::Spacing();
-            if (primaryButton("Next: Stay Details ->", ImVec2(210.0f, 38.0f), m_wizardState.selectedGuestId != -1)) {
+            if (primaryButton("Next: Stay Details ->", ImVec2(0.0f, 38.0f), m_wizardState.selectedGuestId != -1)) {
                 m_wizardState.step = 1;
             }
         }
@@ -1086,11 +1090,11 @@ void GuiRenderer::renderSmartCheckInScreen() {
             }
 
             ImGui::Spacing();
-            if (ghostButton("<- Back", ImVec2(110.0f, 38.0f))) {
+            if (ghostButton("<- Back", ImVec2(0.0f, 38.0f))) {
                 m_wizardState.step = 0;
             }
             ImGui::SameLine();
-            if (primaryButton("Next: Preferences & Recommendations ->", ImVec2(300.0f, 38.0f))) {
+            if (primaryButton("Next: Preferences & Recommendations ->", ImVec2(0.0f, 38.0f))) {
                 m_wizardState.step = 2;
             }
         }
@@ -1159,7 +1163,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
             if (top3.empty()) {
                 drawEmptyState("No Available Rooms for Selected Dates", "You can place this guest on the FIFO Waitlist Queue.");
                 ImGui::Spacing();
-                if (primaryButton("Add to Waitlist", ImVec2(200.0f, 38.0f))) {
+                if (primaryButton("Add to Waitlist", ImVec2(0.0f, 38.0f))) {
                     const RoomType wanted = (m_wizardState.prefs.budget >= 35000.0)
                                                 ? RoomType::Presidential
                                                 : ((m_wizardState.prefs.budget >= 20000.0)
@@ -1228,11 +1232,11 @@ void GuiRenderer::renderSmartCheckInScreen() {
             }
 
             ImGui::Spacing();
-            if (ghostButton("<- Back", ImVec2(110.0f, 38.0f))) {
+            if (ghostButton("<- Back", ImVec2(0.0f, 38.0f))) {
                 m_wizardState.step = 1;
             }
             ImGui::SameLine();
-            if (primaryButton("Next: Review & Confirm ->", ImVec2(230.0f, 38.0f), m_wizardState.selectedRoomId != -1)) {
+            if (primaryButton("Next: Review & Confirm ->", ImVec2(0.0f, 38.0f), m_wizardState.selectedRoomId != -1)) {
                 m_wizardState.step = 3;
             }
         }
@@ -1276,12 +1280,12 @@ void GuiRenderer::renderSmartCheckInScreen() {
                 ImGui::TextColored(pal.goldHighlight, "ESTIMATED TOTAL : %s", formatPKR(est.grandTotal).c_str());
 
                 ImGui::Spacing();
-                if (ghostButton("<- Back", ImVec2(110.0f, 38.0f))) {
+                if (ghostButton("<- Back", ImVec2(0.0f, 38.0f))) {
                     m_wizardState.step = 2;
                 }
                 ImGui::SameLine();
                 const char* confirmLabel = m_wizardState.immediateCheckIn ? "Confirm & Check In Now" : "Confirm Reservation";
-                if (primaryButton(confirmLabel, ImVec2(240.0f, 38.0f))) {
+                if (primaryButton(confirmLabel, ImVec2(0.0f, 38.0f))) {
                     std::string err;
                     const int newBookingId = m_system.createBooking(
                         g->id,
