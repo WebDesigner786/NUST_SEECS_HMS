@@ -432,7 +432,8 @@ void GuiRenderer::renderGuestsCrmScreen() {
             const ImGuiTableFlags tFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                            ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable |
                                            ImGuiTableFlags_ScrollY;
-            const float tableH = std::max(160.0f, ImGui::GetContentRegionAvail().y - 46.0f);
+            const float pagFooterH = std::max(36.0f, ImGui::GetFrameHeight()) + ImGui::GetStyle().ItemSpacing.y * 2.0f + 10.0f;
+            const float tableH = std::max(160.0f, ImGui::GetContentRegionAvail().y - pagFooterH);
             if (ImGui::BeginTable("##GuestsTable", 6, tFlags, ImVec2(0.0f, tableH))) {
                 ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed | ImGuiTableColumnFlags_DefaultSort, 52.0f, 0);
                 ImGui::TableSetupColumn("Full Name", ImGuiTableColumnFlags_WidthStretch, 0.0f, 1);
@@ -899,7 +900,12 @@ void GuiRenderer::renderInvoicePreviewModal() {
         ImGui::Spacing();
 
         // Guest & Stay block
-        ImGui::BeginChild("##InvMetaBox", ImVec2(0.0f, 76.0f), ImGuiChildFlags_Borders);
+        ImGui::BeginChild(
+            "##InvMetaBox",
+            ImVec2(0.0f, 0.0f),
+            ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY,
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+        );
         if (ImGui::BeginTable("##InvMetaCols", 2, ImGuiTableFlags_SizingStretchSame)) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -916,6 +922,7 @@ void GuiRenderer::renderInvoicePreviewModal() {
             }
             ImGui::EndTable();
         }
+        checkChildOverflow("##InvMetaBox");
         ImGui::EndChild();
         ImGui::Spacing();
 

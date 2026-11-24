@@ -305,6 +305,15 @@ struct BackupsAndSeederState {
     std::string lastNightAuditPath   = "";
     std::string lastNightAuditSummary = "";
 };
+
+struct OverflowRecord {
+    std::string screen;
+    std::string cardId;
+    float       width      = 0.0f;
+    float       height     = 0.0f;
+    float       scrollMaxY = 0.0f;
+};
+
 class GuiRenderer {
 public:
     GuiRenderer(
@@ -322,8 +331,13 @@ public:
     ScreenId activeScreen() const { return m_activeScreen; }
     bool isSplashFinished() const { return m_splashElapsed >= kSplashDuration; }
 
-    // For automated smoke testing: skip splash or login programmatically
+    // For automated smoke testing: skip splash, force Viva tab, and detect child overflow
     void skipSplash() { m_splashElapsed = kSplashDuration; }
+    void setForcedVivaTab(int tabIdx) { m_forcedVivaTab = tabIdx; }
+    void setOverflowDetectionEnabled(bool enabled) { m_overflowDetectEnabled = enabled; }
+    void clearOverflowRecords() { m_overflowRecords.clear(); }
+    const std::vector<OverflowRecord>& overflowRecords() const { return m_overflowRecords; }
+    void checkChildOverflow(const char* cardId);
 
     // -------------------------------------------------------------------------
     // Shared Widgets (Section 8 — write once, reuse everywhere)
@@ -464,6 +478,12 @@ private:
     // Phase 8 state (Guided Demo, Backups, Seeder & Night Audit)
     GuidedDemoState               m_demoState{};
     BackupsAndSeederState         m_adminOpsState{};
+
+    // Debug-only overflow detector state (inactive in normal use)
+    bool                          m_overflowDetectEnabled = false;
+    int                           m_forcedVivaTab         = -1;
+    std::vector<std::string>      m_cardIdStack{};
+    std::vector<OverflowRecord>   m_overflowRecords{};
 };
 
 } // namespace hms

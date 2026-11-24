@@ -1,5 +1,6 @@
 #include "GuiRenderer.h"
 #include "Sha256.h"
+#include "imgui_internal.h"
 
 #include <algorithm>
 #include <cmath>
@@ -720,6 +721,7 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
             m_loginErrorMsg.clear();
         }
 
+        checkChildOverflow("##LoginCardBody");
         ImGui::EndChild();
         sLoginCardH = 112.0f + ImGui::GetItemRectSize().y + 24.0f;
     }
@@ -1192,7 +1194,7 @@ void GuiRenderer::renderActiveScreenContent() {
  */
 void GuiRenderer::renderUpcomingModulePreview(ScreenId screen) {
     drawSectionHeader(screenDisplayName(screen), "Scheduled for interactive implementation in Phases 5–8");
-    if (beginCard("##ModulePreviewCard", "Module Ready for Next Phase", ImVec2(0.0f, 260.0f))) {
+    if (beginCard("##ModulePreviewCard", "Module Ready for Next Phase", ImVec2(0.0f, 0.0f), true)) {
         drawEmptyState(
             screenDisplayName(screen),
             "Core backend state in HotelSystem is active. Interactive GUI screen will be wired in its designated phase."
@@ -1250,6 +1252,7 @@ bool GuiRenderer::beginCard(const char* id, const char* title, const ImVec2& siz
     const ImVec2 childSize = autoHeight ? ImVec2(size.x, 0.0f) : size;
 
     const bool open = ImGui::BeginChild(id, childSize, childFlags, winFlags);
+    m_cardIdStack.push_back(id != nullptr ? std::string(id) : std::string("##Card"));
     if (open && title != nullptr && title[0] != '\0') {
         ImGui::TextColored(pal.text, "%s", title);
         ImGui::Separator();
@@ -1259,12 +1262,60 @@ bool GuiRenderer::beginCard(const char* id, const char* title, const ImVec2& siz
 }
 
 /*
+ * Purpose: Debug-only overflow detector (inactive in normal use). Records non-whitelisted
+ *          child windows whose vertical ScrollMax.y > 1.0f.
+ * Inputs: cardId (child window identifier).
+ * Outputs: Appends/updates m_overflowRecords.
+ * Big-O: O(K) where K is number of recorded overflows.
+ */
+void GuiRenderer::checkChildOverflow(const char* cardId) {
+    if (!m_overflowDetectEnabled) {
+        return;
+    }
+    const std::string cid = (cardId != nullptr) ? std::string(cardId) : std::string("##Unknown");
+    // Whitelist deliberate scroll areas (sidebar nav, Gantt timeline, long priority queue, Kanban columns)
+    if (cid == "##NavScrollArea" ||
+        cid == "##TimelineScroll" ||
+        cid == "##TimelineCanvas" ||
+        cid == "##HkListCard" ||
+        cid == "##KanbanCol_0" ||
+        cid == "##KanbanCol_1" ||
+        cid == "##KanbanCol_2") {
+        return;
+    }
+    ImGuiWindow* win = ImGui::GetCurrentWindow();
+    if (win == nullptr || win->ScrollMax.y <= 1.0f) {
+        return;
+    }
+    std::string scr = m_system.isLoggedIn() ? std::string(screenDisplayName(m_activeScreen)) : std::string("Login");
+    if (m_system.isLoggedIn() && m_activeScreen == ScreenId::VivaTools && m_forcedVivaTab >= 0) {
+        static const char* kTabNames[4] = {"Seeder", "X-Ray", "Benchmark", "Visualiser"};
+        const int ti = std::clamp(m_forcedVivaTab, 0, 4);
+        scr += (ti < 4) ? (std::string(" [") + kTabNames[ti] + "]") : std::string(" [Self-Test]");
+    }
+    for (OverflowRecord& rec : m_overflowRecords) {
+        if (rec.screen == scr && rec.cardId == cid) {
+            rec.width      = win->Size.x;
+            rec.height     = win->Size.y;
+            rec.scrollMaxY = std::max(rec.scrollMaxY, win->ScrollMax.y);
+            return;
+        }
+    }
+    m_overflowRecords.push_back(OverflowRecord{scr, cid, win->Size.x, win->Size.y, win->ScrollMax.y});
+}
+
+/*
  * Purpose: Closes a Card container opened by beginCard().
  * Inputs: None.
  * Outputs: Pops child window and styles.
  * Big-O: O(1) time, O(1) space.
  */
 void GuiRenderer::endCard() {
+    const std::string cid = m_cardIdStack.empty() ? std::string("##Card") : m_cardIdStack.back();
+    if (!m_cardIdStack.empty()) {
+        m_cardIdStack.pop_back();
+    }
+    checkChildOverflow(cid.c_str());
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
@@ -1301,7 +1352,7 @@ void GuiRenderer::drawKpiTile(
     anim.elapsed = std::min(0.6f, anim.elapsed + dt);
     const double displayVal = anim.startVal + (anim.targetVal - anim.startVal) * easeOutCubic(anim.elapsed / 0.6f);
 
-    if (beginCard(id, nullptr, ImVec2(0.0f, 128.0f))) {
+    if (beginCard(id, nullptr, ImVec2(0.0f, 0.0f), true)) {
         if (m_fonts.captionFont != nullptr) {
             ImGui::PushFont(m_fonts.captionFont);
         }

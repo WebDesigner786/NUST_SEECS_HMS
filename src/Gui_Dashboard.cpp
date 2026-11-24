@@ -408,10 +408,11 @@ void GuiRenderer::renderReceptionistDashboard() {
     endCard();
 
     ImGui::Spacing();
+    const float recepTblH = std::max(240.0f, ImGui::GetContentRegionAvail().y - 4.0f);
     if (ImGui::BeginTable("##RecepLists", 2, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##RecepArrivals", "Today's Expected Arrivals", ImVec2(0.0f, 300.0f))) {
+        if (beginCard("##RecepArrivals", "Today's Expected Arrivals", ImVec2(0.0f, recepTblH))) {
             int count = 0;
             for (const Booking& b : db.bookings) {
                 if (b.checkInDay == today && b.status == BookingStatus::Reserved) {
@@ -428,7 +429,7 @@ void GuiRenderer::renderReceptionistDashboard() {
         endCard();
 
         ImGui::TableSetColumnIndex(1);
-        if (beginCard("##RecepDepartures", "Today's Scheduled Departures", ImVec2(0.0f, 300.0f))) {
+        if (beginCard("##RecepDepartures", "Today's Scheduled Departures", ImVec2(0.0f, recepTblH))) {
             int count = 0;
             for (const Booking& b : db.bookings) {
                 if (b.checkOutDay == today && b.status == BookingStatus::CheckedIn) {
@@ -495,7 +496,8 @@ void GuiRenderer::renderHousekeepingDashboard() {
     }
 
     ImGui::Spacing();
-    if (beginCard("##HkPriorityPreview", "Top Priority Tasks (Min-Heap Pop Order)", ImVec2(0.0f, 320.0f))) {
+    const float hkPrevH = std::max(240.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+    if (beginCard("##HkPriorityPreview", "Top Priority Tasks (Min-Heap Pop Order)", ImVec2(0.0f, hkPrevH))) {
         if (queueOrder.empty()) {
             drawEmptyState("Dispatch Queue Empty", "All rooms are clean and operational.");
         } else {

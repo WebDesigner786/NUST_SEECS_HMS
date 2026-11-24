@@ -361,7 +361,7 @@ void GuiRenderer::renderAnalyticsScreen() {
                     yLo[static_cast<std::size_t>(f + 1)] = fc.lowerBand7Days[static_cast<std::size_t>(f)];
                 }
 
-                const float plotH = std::max(230.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+                const float plotH = std::max(180.0f, ImGui::GetContentRegionAvail().y - 4.0f);
                 if (ImPlot::BeginPlot((std::string("##Plot_") + cardId).c_str(), ImVec2(-1.0f, plotH))) {
                     ImPlot::SetupAxes("Day", yLbl);
                     ImPlot::SetNextFillStyle(pal.goldHighlight, 0.18f);
@@ -618,6 +618,7 @@ void GuiRenderer::renderServiceOrdersKanbanScreen() {
                             m_system.moveServiceOrderStage(o.id, stage + 1);
                         }
                     }
+                    checkChildOverflow(cId);
                     ImGui::EndChild();
                     ImGui::PopStyleColor();
                     ImGui::Spacing();
@@ -764,7 +765,12 @@ void GuiRenderer::renderAuditLogScreen() {
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(bannerCol.x, bannerCol.y, bannerCol.z, 0.20f));
     ImGui::PushStyleColor(ImGuiCol_Border, bannerCol);
-    ImGui::BeginChild("##AuditBanner", ImVec2(0.0f, 58.0f), ImGuiChildFlags_Borders);
+    ImGui::BeginChild(
+        "##AuditBanner",
+        ImVec2(0.0f, 0.0f),
+        ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY,
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+    );
     if (badIdx == -1) {
         ImGui::TextColored(pal.statusAvailable, "CHAIN VERIFIED (%zu entries intact — genesis to latest SHA-256 valid)", db.auditLog.size());
     } else {
@@ -779,6 +785,7 @@ void GuiRenderer::renderAuditLogScreen() {
             Toast::push(NoticeType::Error, "Tampering Detected!", "Hash chain broken at entry #" + std::to_string(res));
         }
     }
+    checkChildOverflow("##AuditBanner");
     ImGui::EndChild();
     ImGui::PopStyleColor(2);
     ImGui::Spacing();
@@ -986,11 +993,11 @@ void GuiRenderer::renderVivaToolsScreen() {
 
     if (ImGui::BeginTabBar("##VivaToolTabs")) {
         // TAB 0: Viva Demo Seeder, Reset Clean State, Night Audit & 90s Guided Demo (Section 9.10 #9, Section 10)
-        if (ImGui::BeginTabItem("Demo Seeder & Guided Tour")) {
+        if (ImGui::BeginTabItem("Demo Seeder & Guided Tour", nullptr, (m_forcedVivaTab == 0) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {
             if (ImGui::BeginTable("##VivaSeederGrid", 2, ImGuiTableFlags_SizingStretchSame)) {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                if (beginCard("##SeederCard", "Viva Demo Dataset Seeder (Section 10)", ImVec2(0.0f, 250.0f))) {
+                if (beginCard("##SeederCard", "Viva Demo Dataset Seeder (Section 10)", ImVec2(0.0f, 0.0f), true)) {
                     ImGui::TextWrapped(
                         "Creates 50 rooms, 35 diverse guests (22 Pakistani + 13 international across Platinum/Gold/Silver/Standard), "
                         "30 days of historical revenue & DailyStats (76%% occupancy, 1.10x surge), 8 Cleaning + 3 Maintenance heap tasks, "
@@ -1012,7 +1019,7 @@ void GuiRenderer::renderVivaToolsScreen() {
                 endCard();
 
                 ImGui::TableSetColumnIndex(1);
-                if (beginCard("##GuidedDemoCard", "90-Second Automated Guided Demo Mode", ImVec2(0.0f, 250.0f))) {
+                if (beginCard("##GuidedDemoCard", "90-Second Automated Guided Demo Mode", ImVec2(0.0f, 0.0f), true)) {
                     ImGui::TextWrapped(
                         "Automatically walks examiners through a narrated 90-second tour: "
                         "Seed Demo Data -> Executive Dashboard -> Interactive Room Matrix -> Smart Check-In Recommender -> "
@@ -1099,9 +1106,10 @@ void GuiRenderer::renderVivaToolsScreen() {
         }
 
         // TAB 1: Algorithm X-Ray Live Telemetry + Adjustable Recommender Weights
-        if (ImGui::BeginTabItem("Algorithm X-Ray")) {
+        if (ImGui::BeginTabItem("Algorithm X-Ray", nullptr, (m_forcedVivaTab == 1) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {
             const auto& entries = AlgoXRayRegistry::instance().entries();
-            if (beginCard("##XRayTelemetryCard", "Live Algorithm Telemetry (Last Run per Algorithm)", ImVec2(0.0f, 300.0f))) {
+            const float xrayH = std::max(220.0f, ImGui::GetContentRegionAvail().y * 0.52f);
+            if (beginCard("##XRayTelemetryCard", "Live Algorithm Telemetry (Last Run per Algorithm)", ImVec2(0.0f, xrayH))) {
                 if (ImGui::BeginTable("##XRayTbl", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY)) {
                     ImGui::TableSetupColumn("Algorithm", ImGuiTableColumnFlags_WidthFixed, 210.0f);
                     ImGui::TableSetupColumn("Input N", ImGuiTableColumnFlags_WidthFixed, 72.0f);
@@ -1126,7 +1134,7 @@ void GuiRenderer::renderVivaToolsScreen() {
             ImGui::Spacing();
 
             // Admin-adjustable Smart Room Recommender weights (Section 9.7)
-            if (beginCard("##RecWeightsCard", "Smart Room Recommender Feature Weights (Sum = 1.00)", ImVec2(0.0f, 200.0f))) {
+            if (beginCard("##RecWeightsCard", "Smart Room Recommender Feature Weights (Sum = 1.00)", ImVec2(0.0f, 0.0f), true)) {
                 RecommenderWeights& w = m_system.recommenderWeights();
                 float wb = static_cast<float>(w.budget), wf = static_cast<float>(w.floor), wv = static_cast<float>(w.view);
                 float we = static_cast<float>(w.elevator), wn = static_cast<float>(w.noise), wbed = static_cast<float>(w.bed);
@@ -1156,7 +1164,7 @@ void GuiRenderer::renderVivaToolsScreen() {
         }
 
         // TAB 2: Sorting Micro-Benchmarks (100 / 1,000 / 10,000)
-        if (ImGui::BeginTabItem("Sorting Micro-Benchmark")) {
+        if (ImGui::BeginTabItem("Sorting Micro-Benchmark", nullptr, (m_forcedVivaTab == 2) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {
             if (primaryButton("Run MergeSort vs QuickSort vs std::sort (100 / 1,000 / 10,000)", ImVec2(0.0f, 38.0f))) {
                 m_xrayState.benchmarks = runSortingMicroBenchmarks();
                 Toast::push(NoticeType::Success, "Benchmark Complete", "Verified exact match with std::sort across all 3 sizes.");
@@ -1170,8 +1178,10 @@ void GuiRenderer::renderVivaToolsScreen() {
                     qUs[i] = m_xrayState.benchmarks[i].quickSortMicros;
                     sUs[i] = m_xrayState.benchmarks[i].stdSortMicros;
                 }
-                if (beginCard("##BenchPlotCard", "Elapsed Microseconds (Lower is Faster)", ImVec2(0.0f, 320.0f))) {
-                    if (ImPlot::BeginPlot("##SortBenchBars", ImVec2(-1.0f, 250.0f))) {
+                const float benchCardH = std::max(280.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+                if (beginCard("##BenchPlotCard", "Elapsed Microseconds (Lower is Faster)", ImVec2(0.0f, benchCardH))) {
+                    const float benchPlotH = std::max(180.0f, ImGui::GetContentRegionAvail().y - 4.0f);
+                    if (ImPlot::BeginPlot("##SortBenchBars", ImVec2(-1.0f, benchPlotH))) {
                         ImPlot::SetupAxes("Dataset (1=100, 2=1,000, 3=10,000)", "Microseconds (us)");
                         ImPlot::SetNextFillStyle(pal.accent, 0.85f);
                         ImPlot::PlotBars("Custom MergeSort", xs, mUs, 3, 0.22, 0, -0.24);
@@ -1190,7 +1200,7 @@ void GuiRenderer::renderVivaToolsScreen() {
         }
 
         // TAB 3: Step-by-Step Animated MergeSort / Min-Heap Visualiser
-        if (ImGui::BeginTabItem("Step-by-Step Visualiser")) {
+        if (ImGui::BeginTabItem("Step-by-Step Visualiser", nullptr, (m_forcedVivaTab == 3) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {
             if (m_xrayState.visSteps.empty()) {
                 m_xrayState.visSteps = recordMergeSortSteps({64, 25, 82, 12, 47, 91, 33, 58, 19, 74, 41, 68});
             }
@@ -1233,7 +1243,7 @@ void GuiRenderer::renderVivaToolsScreen() {
             }
 
             ImGui::Spacing();
-            if (beginCard("##VisCanvas", "Animated Algorithm State", ImVec2(0.0f, 320.0f))) {
+            if (beginCard("##VisCanvas", "Animated Algorithm State", ImVec2(0.0f, 0.0f), true)) {
                 const SortStepSnapshot& snap = m_xrayState.visSteps[static_cast<std::size_t>(m_xrayState.visStepIdx)];
                 ImGui::TextColored(pal.secondaryAccent, "Step %d / %zu — %s", m_xrayState.visStepIdx + 1, m_xrayState.visSteps.size(), snap.description.c_str());
                 ImGui::Spacing();
@@ -1266,7 +1276,7 @@ void GuiRenderer::renderVivaToolsScreen() {
         }
 
         // TAB 4: Startup Self-Test (Section 11)
-        if (ImGui::BeginTabItem("Self-Test Suite")) {
+        if (ImGui::BeginTabItem("Self-Test Suite", nullptr, (m_forcedVivaTab == 4) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {
             if (primaryButton("Re-Run All 15 Self-Tests Now", ImVec2(0.0f, 34.0f))) {
                 m_startupSelfTests = runAllSelfTests(false);
                 const auto p3 = HotelSystem::runPhase3SelfTests(false);

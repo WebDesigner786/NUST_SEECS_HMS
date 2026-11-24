@@ -276,8 +276,8 @@ void GuiRenderer::renderRoomMatrixScreen() {
 
     ImGui::Spacing();
 
-    // Floor-plan grid card (Floor 5 at top down to Floor 1 at bottom)
-    if (beginCard("##FloorPlanCanvas", nullptr, ImVec2(0.0f, 0.0f))) {
+    // Floor-plan grid card (Floor 5 at top down to Floor 1 at bottom; auto-height so main page scrolls, never nested)
+    if (beginCard("##FloorPlanCanvas", nullptr, ImVec2(0.0f, 0.0f), true)) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const ImVec2 canvasAvail = ImGui::GetContentRegionAvail();
         constexpr float kGap    = 8.0f;
@@ -863,7 +863,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
 
     // Horizontal 4-Step Stepper Indicator
     const char* stepLabels[4] = {"1. Guest Profile", "2. Stay Details", "3. Smart Match", "4. Review & Confirm"};
-    if (beginCard("##WizardStepper", nullptr, ImVec2(0.0f, 68.0f))) {
+    if (beginCard("##WizardStepper", nullptr, ImVec2(0.0f, 0.0f), true)) {
         if (ImGui::BeginTable("##StepBar", 4, ImGuiTableFlags_SizingStretchSame)) {
             ImGui::TableNextRow();
             for (int s = 0; s < 4; ++s) {
@@ -921,7 +921,12 @@ void GuiRenderer::renderSmartCheckInScreen() {
             ImGui::Spacing();
 
             if (m_wizardState.showNewGuestForm) {
-                ImGui::BeginChild("##InlineNewGuest", ImVec2(0.0f, 270.0f), ImGuiChildFlags_Borders);
+                ImGui::BeginChild(
+                    "##InlineNewGuest",
+                    ImVec2(0.0f, 0.0f),
+                    ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY,
+                    ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+                );
                 ImGui::TextColored(pal.accent, "Register New Guest (Hand-Written Character Validation + CNIC Hash Table)");
                 ImGui::Separator();
 
@@ -989,6 +994,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                         Toast::push(NoticeType::Error, "Registration Failed", regErr);
                     }
                 }
+                checkChildOverflow("##InlineNewGuest");
                 ImGui::EndChild();
                 ImGui::Spacing();
             }
@@ -1012,9 +1018,11 @@ void GuiRenderer::renderSmartCheckInScreen() {
                 mergeSort(list, [](const ScoredGuest& a, const ScoredGuest& b) { return a.score > b.score; }, nullptr, nullptr, "Wizard Guest Fuzzy MergeSort");
             }
 
+            const float wizFooterH = 38.0f + ImGui::GetStyle().ItemSpacing.y * 2.0f + 6.0f;
+            const float wizTableH  = std::max(180.0f, ImGui::GetContentRegionAvail().y - wizFooterH);
             if (list.empty()) {
                 drawEmptyState("No Matching Guests", "Click '+ New Guest' above to register a walk-in guest.");
-            } else if (ImGui::BeginTable("##WizGuestTable", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY, ImVec2(0.0f, 240.0f))) {
+            } else if (ImGui::BeginTable("##WizGuestTable", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY, ImVec2(0.0f, wizTableH))) {
                 ImGui::TableSetupColumn("Select", ImGuiTableColumnFlags_WidthFixed, 85.0f);
                 ImGui::TableSetupColumn("Full Name");
                 ImGui::TableSetupColumn("CNIC / Passport");
@@ -1194,7 +1202,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                         char cardId[32]{};
                         std::snprintf(cardId, sizeof(cardId), "##RecCard_%zu", i);
 
-                        if (beginCard(cardId, nullptr, ImVec2(0.0f, 278.0f))) {
+                        if (beginCard(cardId, nullptr, ImVec2(0.0f, 0.0f), true)) {
                             char matchBadge[32]{};
                             std::snprintf(matchBadge, sizeof(matchBadge), "%d%% Match", bd.percent);
                             ImGui::TextColored(pal.text, "#%zu  Room %d (%s)", i + 1U, r->number, toString(r->type));

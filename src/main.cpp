@@ -158,7 +158,7 @@ int main(int argc, char** argv) {
     glfwSetWindowSizeLimits(window, 1280, 720, GLFW_DONT_CARE, GLFW_DONT_CARE);
     setWindowIcon(window);
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1); // VSync ON
+    glfwSwapInterval(smokeTestMode ? 0 : 1); // VSync ON (disabled in --smoke-test for fast sweep)
 
     // OpenGL 3.3 Core multisampling (GL_MULTISAMPLE = 0x809D, omitted from legacy Windows GL/gl.h)
     constexpr GLenum kGlMultisample = 0x809D;
@@ -202,12 +202,82 @@ int main(int argc, char** argv) {
 
     hms::GuiRenderer gui(hotelSystem, themeEngine, fonts, startupSelfTests);
 
+    // Smoke-test overflow sweep state: 4 (resolution, textScale) combos x (16 screens + 5 VivaTools tabs = 21 views) x 10 frames
+    struct SweepConfig {
+        float w;
+        float h;
+        int   scaleIdx; // 1 = 100%, 3 = 130%
+        const char* label;
+    };
+    static constexpr SweepConfig kSweepConfigs[4] = {
+        {1920.0f, 1080.0f, 1, "1920x1080 100%"},
+        {1920.0f, 1080.0f, 3, "1920x1080 130%"},
+        {1366.0f,  768.0f, 1, "1366x768 100%"},
+        {1366.0f,  768.0f, 3, "1366x768 130%"}
+    };
+    struct SweepView {
+        hms::ScreenId screen;
+        int           vivaTab;
+    };
+    static constexpr SweepView kSweepViews[] = {
+        {hms::ScreenId::Dashboard,           -1},
+        {hms::ScreenId::RoomMatrix,          -1},
+        {hms::ScreenId::SmartCheckIn,        -1},
+        {hms::ScreenId::Timeline,            -1},
+        {hms::ScreenId::Guests,              -1},
+        {hms::ScreenId::Bookings,            -1},
+        {hms::ScreenId::Billing,             -1},
+        {hms::ScreenId::Waitlist,            -1},
+        {hms::ScreenId::YieldManagement,     -1},
+        {hms::ScreenId::Analytics,           -1},
+        {hms::ScreenId::HousekeepingBoard,   -1},
+        {hms::ScreenId::ServiceOrdersKanban, -1},
+        {hms::ScreenId::Staff,               -1},
+        {hms::ScreenId::AuditLog,            -1},
+        {hms::ScreenId::Backups,             -1},
+        {hms::ScreenId::Settings,            -1},
+        {hms::ScreenId::VivaTools,            0},
+        {hms::ScreenId::VivaTools,            1},
+        {hms::ScreenId::VivaTools,            2},
+        {hms::ScreenId::VivaTools,            3},
+        {hms::ScreenId::VivaTools,            4}
+    };
+    constexpr int kNumViews = static_cast<int>(sizeof(kSweepViews) / sizeof(kSweepViews[0]));
+    constexpr int kFramesPerView = 10;
+    int smokeInitDone = 0;
+    int sweepCfgIdx = 0;
+    int sweepViewIdx = 0;
+    int sweepFrameInView = 0;
+    int totalOverflowsAll = 0;
+
     int renderedFrames = 0;
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
+        if (smokeTestMode && smokeInitDone == 0) {
+            gui.skipSplash();
+            hotelSystem.login("admin", "Admin@123");
+            hotelSystem.seedVivaDemoData();
+            std::string naPath, naSum;
+            hotelSystem.runNightAudit(&naPath, &naSum);
+            smokeInitDone = 1;
+        }
+
+        if (smokeTestMode && sweepCfgIdx < 4) {
+            const SweepConfig& cfg = kSweepConfigs[sweepCfgIdx];
+            const SweepView& vw = kSweepViews[sweepViewIdx];
+            hotelSystem.db().settings.textScaleIdx = cfg.scaleIdx;
+            gui.navigateTo(vw.screen);
+            gui.setForcedVivaTab(vw.vivaTab);
+            // Warm up 4 frames for auto-height / layout settle, then monitor 6 frames
+            gui.setOverflowDetectionEnabled(sweepFrameInView >= 4);
+        }
+
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
+        if (smokeTestMode && sweepCfgIdx < 4) {
+            io.DisplaySize = ImVec2(kSweepConfigs[sweepCfgIdx].w, kSweepConfigs[sweepCfgIdx].h);
+        }
         ImGui::NewFrame();
 
         gui.renderFrame(io.DeltaTime);
@@ -226,29 +296,36 @@ int main(int argc, char** argv) {
         glfwSwapBuffers(window);
 
         ++renderedFrames;
-        if (smokeTestMode) {
-            // Exercise Phase 8: Login -> Seed Viva Demo Data -> Dashboard (seeded) -> Room Matrix -> Backups UI -> Night Audit -> Audit Chain Verify
-            if (renderedFrames == 6) {
-                gui.skipSplash();
-            } else if (renderedFrames == 10) {
-                hotelSystem.login("admin", "Admin@123");
-            } else if (renderedFrames == 14) {
-                hotelSystem.seedVivaDemoData();
-                gui.navigateTo(hms::ScreenId::Dashboard);
-            } else if (renderedFrames == 22) {
-                gui.navigateTo(hms::ScreenId::RoomMatrix);
-            } else if (renderedFrames == 30) {
-                gui.navigateTo(hms::ScreenId::Backups);
-            } else if (renderedFrames == 38) {
-                std::string naPath, naSum;
-                hotelSystem.runNightAudit(&naPath, &naSum);
-                gui.navigateTo(hms::ScreenId::VivaTools);
-                themeEngine.toggleTheme();
-            } else if (renderedFrames >= 48) {
+        if (smokeTestMode && sweepCfgIdx < 4) {
+            ++sweepFrameInView;
+            if (sweepFrameInView >= kFramesPerView) {
+                sweepFrameInView = 0;
+                ++sweepViewIdx;
+                if (sweepViewIdx >= kNumViews) {
+                    const SweepConfig& cfg = kSweepConfigs[sweepCfgIdx];
+                    const auto& recs = gui.overflowRecords();
+                    for (const hms::OverflowRecord& r : recs) {
+                        std::printf(
+                            "[OVERFLOW %s] screen=%s card=%s size=%.0fx%.0f scrollMaxY=%.1f\n",
+                            cfg.label, r.screen.c_str(), r.cardId.c_str(), r.width, r.height, r.scrollMaxY
+                        );
+                    }
+                    std::printf("[SWEEP %s] overflows=%zu\n", cfg.label, recs.size());
+                    totalOverflowsAll += static_cast<int>(recs.size());
+                    gui.clearOverflowRecords();
+                    sweepViewIdx = 0;
+                    ++sweepCfgIdx;
+                }
+            }
+            if (sweepCfgIdx >= 4) {
+                gui.setOverflowDetectionEnabled(false);
+                gui.setForcedVivaTab(-1);
+                hotelSystem.db().settings.textScaleIdx = 1;
                 const int chainRes = hotelSystem.verifyAuditLogChain();
                 std::printf(
-                    "[Phase 8 Smoke Test] PASS: Rendered %d frames | Seeded: rooms=%zu guests=%zu bookings=%zu invoices=%zu tasks=%zu orders=%zu waitlist=%zu audit=%zu (chain=%s)\n",
+                    "[Phase 8 Smoke Test] PASS: Rendered %d frames | Total non-whitelisted overflows=%d | Seeded: rooms=%zu guests=%zu bookings=%zu invoices=%zu tasks=%zu orders=%zu waitlist=%zu audit=%zu (chain=%s)\n",
                     renderedFrames,
+                    totalOverflowsAll,
                     hotelSystem.db().rooms.size(),
                     hotelSystem.db().guests.size(),
                     hotelSystem.db().bookings.size(),
