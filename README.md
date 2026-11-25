@@ -50,9 +50,11 @@ Three default accounts are seeded automatically on first launch (passwords store
 
 | Role | Username | Password | Accessible Modules |
 |---|---|---|---|
-| **Admin** | `admin` | `Admin@123` | Full access: Dashboard, Room Matrix, Smart Check-In, Timeline, Guests, Bookings, Billing, Waitlist, Yield Pricing & Override, Analytics, Housekeeping, Service Orders, Staff, Audit Log, Backups, Night Audit, Settings, Viva Tools |
-| **Receptionist** | `reception` | `Desk@123` | Reception Dashboard, Room Matrix, Smart Check-In, Timeline, Guests CRM, Bookings, Billing & Invoice Export, Waitlist, Service Orders |
-| **Housekeeping** | `housekeeping` | `Clean@123` | Housekeeping Dashboard, Room Matrix (status updates), Housekeeping Min-Heap Dispatch Board, Service Orders |
+| **Admin** | `admin` | `Admin@123` | Full access: Dashboard, Room Matrix, Smart Check-In, Timeline, Guests, Bookings, Billing, Waitlist, Pricing & Demand, Analytics, Housekeeping, Service Orders, Staff, Audit Log, Backups & Night Audit, Settings, and **Developer & Evaluation Tools** (open from Settings -> Developer & Evaluation Tools, `Ctrl+Shift+D`, or `Ctrl+K` Command Palette) |
+| **Receptionist** | `reception` | `Desk@123` | Reception Dashboard, Room Matrix, Smart Check-In, Timeline, Guests, Bookings, Billing & Invoice Export, Waitlist, Service Orders |
+| **Housekeeping** | `housekeeping` | `Clean@123` | Housekeeping Dashboard, Room Matrix (status updates), Housekeeping Priority Queue, Service Orders |
+
+> **Demo Autofill & Developer Tools:** On the sign-in screen, click **Show demo accounts** to expand one-click autofill chips. **Developer & Evaluation Tools** (Sample Data loader, Reset to Empty System, Guided Tour, Algorithm X-Ray, Sorting Benchmarks, Step-by-Step Visualiser, Self-Test Suite) is hidden from the main sidebar and available to Admins via **Settings -> Developer & Evaluation Tools**, `Ctrl+Shift+D`, or `Ctrl+K`.
 
 > **Security Note:** Three consecutive failed logins trigger a 30-second lockout timer. Any unauthorized action attempt is rejected server-side by `HotelSystem::checkPermission()` and recorded as `RBAC_DENIED` in the SHA-256 audit chain.
 
@@ -338,4 +340,12 @@ Fill in your group members' names and CMS IDs before submission:
 |---|---|---|---|
 | **Member 1 (Lead / Systems & Security)** | `______` | `Models.h`, `Sha256.*`, `FileManager.*`, `main.cpp`, `CMakeLists.txt` | Binary persistence, atomic crash recovery, SHA-256 password salting, live audit tamper test, `--selftest` |
 | **Member 2 (Algorithms & Core Logic)** | `______` | `Algorithms.*`, `HotelSystem.*` | Smart Room Recommender + MergeSort, Dynamic Yield Simulator, Min-Heap Dispatcher, CNIC Hash Table, Undo/Redo, Waitlist, Folio & Billing |
-| **Member 3 (GUI, Analytics & UX)** | `______` | `Theme.*`, `GuiRenderer.*`, `Gui_Dashboard.cpp`, `Gui_Rooms.cpp`, `Gui_Operations.cpp`, `Gui_Admin.cpp` | Midnight Obsidian / Executive Pearl themes, Room Matrix, 4-Step Check-In Wizard, Gantt Timeline, Kanban, `Ctrl+K` Palette, Guided Demo Mode |
+| **Member 3 (GUI, Analytics & UX)** | `______` | `Theme.*`, `GuiRenderer.*`, `Gui_Dashboard.cpp`, `Gui_Rooms.cpp`, `Gui_Operations.cpp`, `Gui_Admin.cpp` | Midnight Obsidian / Executive Pearl themes, Room Matrix, 4-Step Check-In Wizard, Gantt Timeline, Kanban, `Ctrl+K` Palette, Guided Tour |
+
+---
+
+## Changes
+
+- **Branding & UI polish:** Branded the interface as **Grand Meridian Hotel — Islamabad** (`Cfg::HOTEL_NAME` / `Cfg::HOTEL_TAGLINE`) across splash, sign-in, sidebar, window title/icon, and invoices; moved university attribution into the Settings **About** card with saved 3-member team fields.
+- **Plain hotel copy & `(i)` technical tooltips:** Replaced implementation jargon in page subtitles and labels with hotel-operations copy while preserving algorithm name, Big-O, and `file::function` inside inline `(i)` tooltips and **Developer & Evaluation Tools** (`Settings` card, `Ctrl+Shift+D`, or `Ctrl+K`).
+- **Operational UX & reliability:** Added first-run empty-database welcome modal, collapsed demo-account autofill on login, live operational Alerts dropdown (audit mismatch, unpaid invoices, overdue cleaning/maintenance), human-readable UI dates (`21 Nov 2026`), unsaved-changes guard on guest registration, zero-overflow auto-height cards across 1080p/768p at 100%/130% text scale, capacity-aware yield simulation, and invoice-consistent ADR/revenue history.

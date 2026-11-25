@@ -102,21 +102,26 @@ void GuiRenderer::renderTimelineScreen() {
     }
 
     drawSectionHeader(
-        "Booking Timeline (Gantt Chart)",
-        "50 Rooms x 30 Days · Drag bar to another room row to swap · Drag right edge to extend/shorten stay"
+        "Booking timeline",
+        "View stays across all rooms and drag bookings to swap rooms or adjust check-out dates.",
+        "Algorithm: Half-open interval overlap detection [in, out) + Command Stack Undo/Redo.\nComplexity: O(B) per room conflict check; O(1) undo/redo.\nSource: Algorithms.cpp::intervalsOverlap, HotelSystem.cpp::swapBookingRoom"
     );
 
     // Controls bar: Scroll window, Zoom, Today button
     if (beginCard("##TimelineControls", nullptr, ImVec2(0.0f, 0.0f), true)) {
         if (ghostButton("<< -7d", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset -= 7; }
+        drawTooltip("Back 7 days");
         ImGui::SameLine();
         if (ghostButton("< -1d", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset -= 1; }
+        drawTooltip("Back 1 day");
         ImGui::SameLine();
         if (primaryButton("Today", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset = -3; }
         ImGui::SameLine();
         if (ghostButton("+1d >", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset += 1; }
+        drawTooltip("Forward 1 day");
         ImGui::SameLine();
         if (ghostButton("+7d >>", ImVec2(0.0f, 32.0f))) { m_timelineState.startDayOffset += 7; }
+        drawTooltip("Forward 7 days");
 
         ImGui::SameLine(0.0f, 22.0f);
         ImGui::SetNextItemWidth(160.0f);
@@ -282,7 +287,7 @@ void GuiRenderer::renderTimelineScreen() {
                         ImGui::BeginTooltip();
                         ImGui::TextColored(pal.accent, "Booking #%d — %s", b.id, toString(b.status));
                         ImGui::Text("Guest : %s", g ? g->fullName.c_str() : "Unknown");
-                        ImGui::Text("Dates : %s -> %s", DateUtil::formatDate(b.checkInDay).c_str(), DateUtil::formatDate(b.checkOutDay).c_str());
+                        ImGui::Text("Dates : %s – %s", DateUtil::formatDateUI(b.checkInDay).c_str(), DateUtil::formatDateUI(b.checkOutDay).c_str());
                         ImGui::TextColored(pal.dimText, "Drag bar to swap room; drag right edge to extend/shorten.");
                         ImGui::EndTooltip();
                     }
@@ -311,7 +316,7 @@ void GuiRenderer::renderTimelineScreen() {
                                     m_timelineState.conflictFlashTimer = 0.9f;
                                     Toast::push(NoticeType::Error, "Resize Conflict Rejected", editErr);
                                 } else {
-                                    Toast::push(NoticeType::Success, "Stay Updated", "Booking #" + std::to_string(b.id) + " checkout -> " + DateUtil::formatDate(clampedOut));
+                                    Toast::push(NoticeType::Success, "Stay updated", "Booking #" + std::to_string(b.id) + " check-out moved to " + DateUtil::formatDateUI(clampedOut) + ".");
                                 }
                             }
                             m_timelineState.resizingBookingId = -1;
@@ -356,17 +361,19 @@ void GuiRenderer::renderGuestsCrmScreen() {
     const HotelDatabase& db = m_system.db();
 
     drawSectionHeader(
-        "Guest CRM & Loyalty Registry",
-        "Custom MergeSort sortable table · 15 rows/page · Hand-written validators · Custom CNIC Hash Table"
+        "Guest directory",
+        "Search guest profiles, loyalty status and stay history, or register a new guest.",
+        "Algorithms: Custom stable MergeSort table sorting (O(G log G)), 127-bucket Custom CNIC Hash Table duplicate detection (O(1) avg), and character-level input validators (O(L)).\nSource: Algorithms.cpp::mergeSort, CnicHashTable, validateCnic"
     );
 
     // Filter & Add bar
     if (beginCard("##CrmTopBar", nullptr, ImVec2(0.0f, 0.0f), true)) {
         ImGui::SetNextItemWidth(320.0f);
-        ImGui::InputTextWithHint("##CrmSearch", "Filter by name, CNIC, passport, phone, email...", m_crmState.searchBuf, sizeof(m_crmState.searchBuf));
+        ImGui::InputTextWithHint("##CrmSearch", "Filter by name, CNIC, passport, phone or email", m_crmState.searchBuf, sizeof(m_crmState.searchBuf));
         ImGui::SameLine();
-        if (primaryButton("+ Register Guest", ImVec2(0.0f, 34.0f))) {
+        if (primaryButton("Register guest", ImVec2(0.0f, 34.0f))) {
             m_crmState.openAddModal = true;
+            m_crmState.confirmDiscardGuest = false;
             m_crmState.formName[0] = '\0';
             m_crmState.formCnic[0] = '\0';
             m_crmState.formPassport[0] = '\0';
@@ -378,7 +385,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
         }
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(pal.dimText, "Total Registered: %zu  |  CNIC Hash Table Entries: %zu", db.guests.size(), m_system.cnicHashTable().size());
+        ImGui::TextColored(pal.dimText, "Registered guests: %zu", db.guests.size());
     }
     endCard();
     ImGui::Spacing();
@@ -428,7 +435,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
         ImGui::TableNextRow();
 
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##CrmTableCard", "Guest Directory (Click Column Headers to MergeSort)", ImVec2(0.0f, 0.0f))) {
+        if (beginCard("##CrmTableCard", "Guest directory (click column headers to sort)", ImVec2(0.0f, 0.0f))) {
             const ImGuiTableFlags tFlags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                            ImGuiTableFlags_Resizable | ImGuiTableFlags_Sortable |
                                            ImGuiTableFlags_ScrollY;
@@ -504,7 +511,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
                 ImGui::Text("Phone    : %s", sel->phone.c_str());
                 ImGui::Text("Email    : %s", sel->email.empty() ? "N/A" : sel->email.c_str());
                 ImGui::Text("Address  : %s", sel->address.empty() ? "N/A" : sel->address.c_str());
-                ImGui::Text("Joined   : %s", DateUtil::formatDate(sel->registeredDay).c_str());
+                ImGui::Text("Joined   : %s", DateUtil::formatDateUI(sel->registeredDay).c_str());
                 ImGui::Spacing();
 
                 // Loyalty Tier Progress Bar toward next tier
@@ -545,7 +552,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
                         const Room* r = m_system.findRoomById(b.roomId);
                         drawBadge(toString(b.status), bookingStatusColor(b.status, pal));
                         ImGui::SameLine();
-                        ImGui::Text("Rm %d · %s -> %s", r ? r->number : 0, DateUtil::formatDate(b.checkInDay).c_str(), DateUtil::formatDate(b.checkOutDay).c_str());
+                        ImGui::Text("Rm %d · %s – %s", r ? r->number : 0, DateUtil::formatDateUI(b.checkInDay).c_str(), DateUtil::formatDateUI(b.checkOutDay).c_str());
                     }
                 }
                 if (stayRows == 0) {
@@ -562,11 +569,11 @@ void GuiRenderer::renderGuestsCrmScreen() {
         ImGui::OpenPopup("##CrmAddGuestModal");
         m_crmState.openAddModal = false;
     }
-    ImGui::SetNextWindowSize(ImVec2(540.0f, 470.0f), ImGuiCond_Appearing);
-    if (ImGui::BeginPopupModal("##CrmAddGuestModal", nullptr, ImGuiWindowFlags_NoResize)) {
-        ImGui::TextColored(pal.accent, "Register New Guest");
+    ImGui::SetNextWindowSize(ImVec2(540.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("##CrmAddGuestModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextColored(pal.accent, "Register new guest");
         ImGui::Separator();
-        ImGui::Checkbox("Foreign Guest (Passport)", &m_crmState.formIsForeign);
+        ImGui::Checkbox("Foreign guest (passport)", &m_crmState.formIsForeign);
 
         std::string nameErr, idErr, phoneErr, emailErr;
         const bool nameOk = validatePersonName(m_crmState.formName, &nameErr);
@@ -576,7 +583,7 @@ void GuiRenderer::renderGuestsCrmScreen() {
             idOk = validateCnic(m_crmState.formCnic, &idErr);
             if (idOk && m_system.isDuplicateCnic(m_crmState.formCnic)) {
                 idOk = false;
-                idErr = "Duplicate CNIC found in Custom Hash Table!";
+                idErr = "A guest with this CNIC is already registered.";
             }
             phoneOk = validatePakistaniPhone(m_crmState.formPhone, nullptr, &phoneErr);
         } else {
@@ -584,29 +591,35 @@ void GuiRenderer::renderGuestsCrmScreen() {
         }
         const bool emailOk = (m_crmState.formEmail[0] == '\0') || validateEmail(m_crmState.formEmail, &emailErr);
 
-        ImGui::InputTextWithHint("Full Name", "e.g. Ayesha Siddiqui", m_crmState.formName, sizeof(m_crmState.formName));
+        bool enterSubmit = false;
+        enterSubmit |= ImGui::InputTextWithHint("Full name", "Ayesha Siddiqui", m_crmState.formName, sizeof(m_crmState.formName), ImGuiInputTextFlags_EnterReturnsTrue);
         if (!nameOk) { ImGui::TextColored(pal.statusOccupied, "%s", nameErr.c_str()); }
 
         if (!m_crmState.formIsForeign) {
-            ImGui::InputTextWithHint("CNIC", "XXXXX-XXXXXXX-X", m_crmState.formCnic, sizeof(m_crmState.formCnic));
+            enterSubmit |= ImGui::InputTextWithHint("CNIC", "XXXXX-XXXXXXX-X", m_crmState.formCnic, sizeof(m_crmState.formCnic), ImGuiInputTextFlags_EnterReturnsTrue);
         } else {
-            ImGui::InputTextWithHint("Passport", "AB1234567", m_crmState.formPassport, sizeof(m_crmState.formPassport));
+            enterSubmit |= ImGui::InputTextWithHint("Passport", "AB1234567", m_crmState.formPassport, sizeof(m_crmState.formPassport), ImGuiInputTextFlags_EnterReturnsTrue);
         }
         if (!idOk) { ImGui::TextColored(pal.statusOccupied, "%s", idErr.c_str()); }
 
-        ImGui::InputTextWithHint("Phone", "03XX-XXXXXXX or +92 3XX XXXXXXX", m_crmState.formPhone, sizeof(m_crmState.formPhone));
+        enterSubmit |= ImGui::InputTextWithHint("Phone", "03XX-XXXXXXX or +92 3XX XXXXXXX", m_crmState.formPhone, sizeof(m_crmState.formPhone), ImGuiInputTextFlags_EnterReturnsTrue);
         if (!phoneOk) { ImGui::TextColored(pal.statusOccupied, "%s", phoneErr.c_str()); }
 
-        ImGui::InputTextWithHint("Email", "name@example.com", m_crmState.formEmail, sizeof(m_crmState.formEmail));
+        enterSubmit |= ImGui::InputTextWithHint("Email", "name@example.com", m_crmState.formEmail, sizeof(m_crmState.formEmail), ImGuiInputTextFlags_EnterReturnsTrue);
         if (!emailOk) { ImGui::TextColored(pal.statusOccupied, "%s", emailErr.c_str()); }
 
-        ImGui::InputText("Nationality", m_crmState.formNationality, sizeof(m_crmState.formNationality));
-        ImGui::InputText("Address", m_crmState.formAddress, sizeof(m_crmState.formAddress));
-        ImGui::InputText("Preferences", m_crmState.formPrefs, sizeof(m_crmState.formPrefs));
+        enterSubmit |= ImGui::InputText("Nationality", m_crmState.formNationality, sizeof(m_crmState.formNationality), ImGuiInputTextFlags_EnterReturnsTrue);
+        enterSubmit |= ImGui::InputText("Address", m_crmState.formAddress, sizeof(m_crmState.formAddress), ImGuiInputTextFlags_EnterReturnsTrue);
+        enterSubmit |= ImGui::InputText("Preferences", m_crmState.formPrefs, sizeof(m_crmState.formPrefs), ImGuiInputTextFlags_EnterReturnsTrue);
+
+        const bool formDirty = (m_crmState.formName[0] != '\0' || m_crmState.formCnic[0] != '\0' ||
+                                m_crmState.formPassport[0] != '\0' || m_crmState.formPhone[0] != '\0' ||
+                                m_crmState.formEmail[0] != '\0' || m_crmState.formAddress[0] != '\0' ||
+                                m_crmState.formPrefs[0] != '\0');
 
         ImGui::Spacing();
         const bool canSave = nameOk && idOk && phoneOk && emailOk;
-        if (primaryButton("Save Guest", ImVec2(0.0f, 36.0f), canSave)) {
+        if ((primaryButton("Save guest", ImVec2(0.0f, 36.0f), canSave) || (enterSubmit && canSave))) {
             Guest ng{};
             ng.fullName        = m_crmState.formName;
             ng.isForeign       = m_crmState.formIsForeign;
@@ -621,14 +634,32 @@ void GuiRenderer::renderGuestsCrmScreen() {
             const int gid = m_system.registerGuest(ng, &regErr);
             if (gid > 0) {
                 m_crmState.selectedGuestId = gid;
+                m_crmState.confirmDiscardGuest = false;
                 ImGui::CloseCurrentPopup();
             } else {
-                Toast::push(NoticeType::Error, "Save Failed", regErr);
+                Toast::push(NoticeType::Error, "Could not save guest", regErr);
             }
         }
         ImGui::SameLine();
         if (ghostButton("Cancel", ImVec2(0.0f, 36.0f))) {
-            ImGui::CloseCurrentPopup();
+            if (formDirty) {
+                m_crmState.confirmDiscardGuest = true;
+            } else {
+                ImGui::CloseCurrentPopup();
+            }
+        }
+        if (m_crmState.confirmDiscardGuest) {
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(pal.statusReserved, "Discard unsaved guest details?");
+            if (dangerButton("Discard", ImVec2(0.0f, 32.0f))) {
+                m_crmState.confirmDiscardGuest = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ghostButton("Keep editing", ImVec2(0.0f, 32.0f))) {
+                m_crmState.confirmDiscardGuest = false;
+            }
         }
         ImGui::EndPopup();
     }
@@ -649,46 +680,47 @@ void GuiRenderer::renderBookingsScreen() {
     const HotelDatabase& db = m_system.db();
 
     drawSectionHeader(
-        "Bookings & Reservations Ledger",
-        "Manage active stays, check-ins, cancellations (>48h free / <=48h 1st-night fee) & no-shows"
+        "Bookings",
+        "Check guests in and out, manage upcoming arrivals, and handle cancellations.",
+        "Algorithm: Half-open interval conflict guard + FIFO Waitlist auto-matching on release.\nComplexity: O(B) display; O(W) waitlist check on cancellation/checkout.\nSource: HotelSystem.cpp::checkInBooking, checkOutBooking, cancelBooking"
     );
 
     if (beginCard("##BookingsTopBar", nullptr, ImVec2(0.0f, 0.0f), true)) {
-        const char* statusOpts[] = {"All Statuses", "Reserved", "Checked In", "Checked Out", "Cancelled", "No-Show"};
+        const char* statusOpts[] = {"All statuses", "Reserved", "Checked in", "Checked out", "Cancelled", "No-show"};
         ImGui::SetNextItemWidth(160.0f);
         ImGui::Combo("##BkStatusFilter", &m_opsState.bookingStatusFilter, statusOpts, 6);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(260.0f);
-        ImGui::InputTextWithHint("##BkSearch", "Search guest name or room #...", m_opsState.bookingSearchBuf, sizeof(m_opsState.bookingSearchBuf));
+        ImGui::InputTextWithHint("##BkSearch", "Search guest name or room number", m_opsState.bookingSearchBuf, sizeof(m_opsState.bookingSearchBuf));
         ImGui::SameLine();
-        if (primaryButton("+ New Booking (Wizard)", ImVec2(0.0f, 34.0f))) {
+        if (primaryButton("New booking", ImVec2(0.0f, 34.0f))) {
             navigateTo(ScreenId::SmartCheckIn);
         }
     }
     endCard();
     ImGui::Spacing();
 
-    if (beginCard("##BookingsTableCard", "All Bookings", ImVec2(0.0f, 0.0f))) {
+    if (beginCard("##BookingsTableCard", "All bookings", ImVec2(0.0f, 0.0f))) {
         const int32_t today = DateUtil::todayDayNumber();
         const float itemSp  = ImGui::GetStyle().ItemSpacing.x;
-        const float datesW  = visibleTextSize("2026-11-30 -> 2026-12-05").x + 18.0f;
+        const float datesW  = visibleTextSize("28 Nov 2026 – 30 Dec 2026").x + 18.0f;
         const float rateW   = visibleTextSize("PKR 55,000 (x1.60)").x + 18.0f;
         const float statusW = visibleTextSize("Checked Out").x + 30.0f;
-        const float ciW     = visibleTextSize("Check-In").x + 24.0f;
+        const float ciW     = visibleTextSize("Check in").x + 24.0f;
         const float cxW     = visibleTextSize("Cancel").x + 22.0f;
         const float nsW     = visibleTextSize("No-show").x + 22.0f;
-        const float coW     = visibleTextSize("Check-Out").x + 24.0f;
-        const float invW    = visibleTextSize("View Invoice").x + 24.0f;
+        const float coW     = visibleTextSize("Check out").x + 24.0f;
+        const float invW    = visibleTextSize("View invoice").x + 24.0f;
         const float actColW = std::max(ciW + cxW + nsW + itemSp * 2.0f, std::max(coW, invW)) + 16.0f;
 
         if (db.bookings.empty()) {
-            drawEmptyState("No Bookings Yet", "Use the Smart Check-In Wizard or load sample data to populate bookings.");
+            drawEmptyState("No bookings yet", "Create a booking from Smart check-in or load sample data.");
         } else if (ImGui::BeginTable("##BookingsTbl", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY)) {
             ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 56.0f);
             ImGui::TableSetupColumn("Guest");
             ImGui::TableSetupColumn("Room", ImGuiTableColumnFlags_WidthFixed, 92.0f);
-            ImGui::TableSetupColumn("Stay Dates", ImGuiTableColumnFlags_WidthFixed, datesW);
-            ImGui::TableSetupColumn("Rate / Surge", ImGuiTableColumnFlags_WidthFixed, rateW);
+            ImGui::TableSetupColumn("Stay dates", ImGuiTableColumnFlags_WidthFixed, datesW);
+            ImGui::TableSetupColumn("Rate / surge", ImGuiTableColumnFlags_WidthFixed, rateW);
             ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, statusW);
             ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, actColW);
             ImGui::TableHeadersRow();
@@ -712,7 +744,7 @@ void GuiRenderer::renderBookingsScreen() {
                 ImGui::TableSetColumnIndex(1); ImGui::Text("%s", gName.c_str());
                 ImGui::TableSetColumnIndex(2); ImGui::Text("Rm %s", rNum.c_str());
                 ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%s -> %s", DateUtil::formatDate(b.checkInDay).c_str(), DateUtil::formatDate(b.checkOutDay).c_str());
+                ImGui::Text("%s – %s", DateUtil::formatDateUI(b.checkInDay).c_str(), DateUtil::formatDateUI(b.checkOutDay).c_str());
                 ImGui::TableSetColumnIndex(4);
                 ImGui::Text("%s (x%.2f)", formatPKR(b.quotedRate).c_str(), b.surgeMultiplier);
                 ImGui::TableSetColumnIndex(5);
@@ -721,10 +753,10 @@ void GuiRenderer::renderBookingsScreen() {
 
                 if (b.status == BookingStatus::Reserved) {
                     const bool canCheckIn = (b.checkInDay <= today);
-                    char ciId[32]{}; std::snprintf(ciId, sizeof(ciId), "Check-In##BkCI%d", b.id);
+                    char ciId[32]{}; std::snprintf(ciId, sizeof(ciId), "Check in##BkCI%d", b.id);
                     if (primaryButton(ciId, ImVec2(ciW, 28.0f), canCheckIn)) { m_system.checkInBooking(b.id); }
                     if (!canCheckIn && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                        ImGui::SetTooltip("Arrival is on %s", DateUtil::formatDate(b.checkInDay).c_str());
+                        ImGui::SetTooltip("Arrival is on %s", DateUtil::formatDateUI(b.checkInDay).c_str());
                     }
                     ImGui::SameLine();
                     char cxId[32]{}; std::snprintf(cxId, sizeof(cxId), "Cancel##BkCX%d", b.id);
@@ -733,7 +765,7 @@ void GuiRenderer::renderBookingsScreen() {
                     char nsId[32]{}; std::snprintf(nsId, sizeof(nsId), "No-show##BkNS%d", b.id);
                     if (ghostButton(nsId, ImVec2(nsW, 28.0f))) { m_system.cancelBooking(b.id, true); }
                 } else if (b.status == BookingStatus::CheckedIn) {
-                    char coId[32]{}; std::snprintf(coId, sizeof(coId), "Check-Out##BkCO%d", b.id);
+                    char coId[32]{}; std::snprintf(coId, sizeof(coId), "Check out##BkCO%d", b.id);
                     if (primaryButton(coId, ImVec2(coW, 28.0f))) {
                         const CheckOutResult co = m_system.checkOutBooking(b.id, DateUtil::currentMinuteOfDay(), "Card");
                         if (co.success) {
@@ -742,7 +774,7 @@ void GuiRenderer::renderBookingsScreen() {
                         }
                     }
                 } else if (b.invoiceId != -1) {
-                    char invId[32]{}; std::snprintf(invId, sizeof(invId), "View Invoice##BkInv%d", b.id);
+                    char invId[32]{}; std::snprintf(invId, sizeof(invId), "View invoice##BkInv%d", b.id);
                     if (ghostButton(invId, ImVec2(invW, 28.0f))) {
                         openInvoicePreview(b.invoiceId);
                     }
@@ -786,33 +818,35 @@ void GuiRenderer::renderBillingScreen() {
     const HotelDatabase& db = m_system.db();
 
     drawSectionHeader(
-        "Billing, Tax Folios & Receipt Exports",
-        "Itemized GST folios · 80-column plain ASCII .txt & print-ready .html receipts"
+        "Billing and invoices",
+        "Review guest invoices, record payments, and export printable receipts.",
+        "Algorithm: Deterministic folio pricing (loyalty/promo discount + GST) and TXT/HTML export.\nComplexity: O(I) invoice list, O(A) per receipt export.\nSource: Algorithms.cpp::calculateBookingEstimate, HotelSystem.cpp::exportInvoiceReceipts"
     );
 
     if (beginCard("##BillingFilterBar", nullptr, ImVec2(0.0f, 0.0f), true)) {
-        const char* paidOpts[] = {"All Invoices", "Paid Only", "Unpaid Only"};
+        const char* paidOpts[] = {"All invoices", "Paid only", "Unpaid only"};
         ImGui::SetNextItemWidth(150.0f);
         ImGui::Combo("##BillPaidFilter", &m_opsState.billingPaidFilter, paidOpts, 3);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(260.0f);
-        ImGui::InputTextWithHint("##BillSearch", "Search invoice # or guest name...", m_opsState.billingSearchBuf, sizeof(m_opsState.billingSearchBuf));
+        ImGui::InputTextWithHint("##BillSearch", "Search invoice number or guest name", m_opsState.billingSearchBuf, sizeof(m_opsState.billingSearchBuf));
     }
     endCard();
     ImGui::Spacing();
 
-    if (beginCard("##BillingTableCard", "Issued Invoices", ImVec2(0.0f, 0.0f))) {
-        const float prevBtnW = visibleTextSize("Preview & Export").x + 26.0f;
-        const float payBtnW  = visibleTextSize("Mark Paid").x + 24.0f;
+    if (beginCard("##BillingTableCard", "Issued invoices", ImVec2(0.0f, 0.0f))) {
+        const float issuedColW = visibleTextSize("28 Nov 2026").x + 18.0f;
+        const float prevBtnW = visibleTextSize("Preview and export").x + 26.0f;
+        const float payBtnW  = visibleTextSize("Mark as paid").x + 24.0f;
         const float actionsColW = prevBtnW + payBtnW + ImGui::GetStyle().ItemSpacing.x + 14.0f;
         if (db.invoices.empty()) {
-            drawEmptyState("No Invoices Generated", "Invoices are automatically created upon Check-Out or Cancellation Fee.");
+            drawEmptyState("No invoices yet", "Invoices are created automatically when a guest checks out.");
         } else if (ImGui::BeginTable("##InvoicesTbl", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY)) {
             ImGui::TableSetupColumn("Invoice #", ImGuiTableColumnFlags_WidthFixed, 105.0f);
             ImGui::TableSetupColumn("Guest");
-            ImGui::TableSetupColumn("Issued", ImGuiTableColumnFlags_WidthFixed, 105.0f);
+            ImGui::TableSetupColumn("Issued", ImGuiTableColumnFlags_WidthFixed, issuedColW);
             ImGui::TableSetupColumn("Taxable", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-            ImGui::TableSetupColumn("Grand Total", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+            ImGui::TableSetupColumn("Grand total", ImGuiTableColumnFlags_WidthFixed, 130.0f);
             ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 96.0f);
             ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, actionsColW);
             ImGui::TableHeadersRow();
@@ -831,21 +865,21 @@ void GuiRenderer::renderBillingScreen() {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0); ImGui::TextColored(pal.accent, "%s", inv.number.c_str());
                 ImGui::TableSetColumnIndex(1); ImGui::Text("%s", gName.c_str());
-                ImGui::TableSetColumnIndex(2); ImGui::Text("%s", DateUtil::formatDate(inv.issuedDay).c_str());
+                ImGui::TableSetColumnIndex(2); ImGui::Text("%s", DateUtil::formatDateUI(inv.issuedDay).c_str());
                 ImGui::TableSetColumnIndex(3); ImGui::Text("%s", formatPKR(inv.taxableAmount).c_str());
                 ImGui::TableSetColumnIndex(4); ImGui::TextColored(pal.goldHighlight, "%s", formatPKR(inv.grandTotal).c_str());
                 ImGui::TableSetColumnIndex(5);
                 drawBadge(inv.paid ? "PAID" : "UNPAID", inv.paid ? pal.statusAvailable : pal.statusOccupied);
                 ImGui::TableSetColumnIndex(6);
 
-                char prevBtn[32]{}; std::snprintf(prevBtn, sizeof(prevBtn), "Preview & Export##Prev%d", inv.id);
+                char prevBtn[40]{}; std::snprintf(prevBtn, sizeof(prevBtn), "Preview and export##Prev%d", inv.id);
                 if (primaryButton(prevBtn, ImVec2(prevBtnW, 28.0f))) {
                     openInvoicePreview(inv.id);
-                    Toast::push(NoticeType::Success, "Invoice Exported", "Saved TXT & HTML receipts for " + inv.number);
+                    Toast::push(NoticeType::Success, "Invoice exported", "Saved text and HTML receipts for " + inv.number + ".");
                 }
                 if (!inv.paid) {
                     ImGui::SameLine();
-                    char payBtn[32]{}; std::snprintf(payBtn, sizeof(payBtn), "Mark Paid##Pay%d", inv.id);
+                    char payBtn[32]{}; std::snprintf(payBtn, sizeof(payBtn), "Mark as paid##Pay%d", inv.id);
                     if (ghostButton(payBtn, ImVec2(payBtnW, 28.0f))) {
                         m_system.markInvoicePaid(inv.id, "Card");
                     }
@@ -888,12 +922,12 @@ void GuiRenderer::renderInvoicePreviewModal() {
     if (ImGui::BeginPopupModal("##InvoicePreviewModal", nullptr, ImGuiWindowFlags_NoResize)) {
         // Header mirroring HTML folio sheet
         if (m_fonts.headingFont != nullptr) { ImGui::PushFont(m_fonts.headingFont); }
-        ImGui::TextColored(pal.accent, "NUST SEECS Grand Hotel");
+        ImGui::TextColored(pal.accent, "%s", Cfg::HOTEL_NAME);
         if (m_fonts.headingFont != nullptr) { ImGui::PopFont(); }
         ImGui::SameLine(ImGui::GetWindowWidth() - 180.0f);
         ImGui::TextColored(pal.text, "%s", inv->number.c_str());
 
-        ImGui::TextColored(pal.dimText, "Sector H-12, Islamabad · Official Tax Folio · Issued %s", DateUtil::formatDate(inv->issuedDay).c_str());
+        ImGui::TextColored(pal.dimText, "%s · Official tax invoice · Issued %s", Cfg::HOTEL_TAGLINE, DateUtil::formatDateUI(inv->issuedDay).c_str());
         ImGui::SameLine(ImGui::GetWindowWidth() - 120.0f);
         drawBadge(inv->paid ? "PAID" : "UNPAID", inv->paid ? pal.statusAvailable : pal.statusOccupied);
         ImGui::Separator();
@@ -918,7 +952,7 @@ void GuiRenderer::renderInvoicePreviewModal() {
             ImGui::TableSetColumnIndex(1);
             ImGui::Text("Room: %s", r ? ("Room " + std::to_string(r->number) + " (" + toString(r->type) + ")").c_str() : "N/A");
             if (b != nullptr) {
-                ImGui::TextColored(pal.dimText, "%s -> %s (%d nights)", DateUtil::formatDate(b->checkInDay).c_str(), DateUtil::formatDate(b->checkOutDay).c_str(), inv->nights);
+                ImGui::TextColored(pal.dimText, "%s – %s (%d nights)", DateUtil::formatDateUI(b->checkInDay).c_str(), DateUtil::formatDateUI(b->checkOutDay).c_str(), inv->nights);
             }
             ImGui::EndTable();
         }
@@ -1000,11 +1034,12 @@ void GuiRenderer::renderWaitlistScreen() {
     const int32_t today = DateUtil::todayDayNumber();
 
     drawSectionHeader(
-        "FIFO Waitlist Queue",
-        "std::queue ordered by request date · Auto-matches when any compatible room frees up"
+        "Waitlist",
+        "Guests waiting for a matching room, notified in arrival-request order when a room opens.",
+        "Algorithm: FIFO std::queue ordered by request date (MergeSort on load).\nComplexity: O(W log W) on load, O(W) auto-match scan.\nSource: HotelSystem.cpp::addToWaitlist, checkWaitlistMatchForRoom"
     );
 
-    if (beginCard("##WaitlistAddCard", "Quick Add to Waitlist", ImVec2(0.0f, 0.0f), true)) {
+    if (beginCard("##WaitlistAddCard", "Add to waitlist", ImVec2(0.0f, 0.0f), true)) {
         const char* typeNames[] = {"Standard", "Deluxe", "Suite", "Presidential"};
         const std::string selGuestName = [&]() -> std::string {
             if (const Guest* g = m_system.findGuestById(m_opsState.wlGuestId)) { return g->fullName; }
@@ -1047,10 +1082,10 @@ void GuiRenderer::renderWaitlistScreen() {
     endCard();
     ImGui::Spacing();
 
-    if (beginCard("##WaitlistQueueCard", "Active FIFO Waitlist", ImVec2(0.0f, 0.0f))) {
+    if (beginCard("##WaitlistQueueCard", "Active waitlist", ImVec2(0.0f, 0.0f))) {
         std::queue<WaitlistEntry> q = m_system.waitlistQueue();
         if (q.empty()) {
-            drawEmptyState("Waitlist Empty", "No guests are currently waiting for rooms.");
+            drawEmptyState("No guests on the waitlist", "Guests added when rooms are full will appear here.");
         } else if (ImGui::BeginTable("##WlTbl", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
             ImGui::TableSetupColumn("Pos", ImGuiTableColumnFlags_WidthFixed, 50.0f);
             ImGui::TableSetupColumn("Guest");
@@ -1070,7 +1105,7 @@ void GuiRenderer::renderWaitlistScreen() {
                 ImGui::TableSetColumnIndex(1); ImGui::Text("%s", g ? g->fullName.c_str() : "Guest");
                 ImGui::TableSetColumnIndex(2); drawBadge(toString(wl.wantedType), pal.accent);
                 ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%s -> %s", DateUtil::formatDate(wl.fromDay).c_str(), DateUtil::formatDate(wl.toDay).c_str());
+                ImGui::Text("%s – %s", DateUtil::formatDateUI(wl.fromDay).c_str(), DateUtil::formatDateUI(wl.toDay).c_str());
                 ImGui::TableSetColumnIndex(4); ImGui::Text("%s", formatPKR(wl.maxBudget).c_str());
                 ImGui::TableSetColumnIndex(5);
                 char bkId[32]{}; std::snprintf(bkId, sizeof(bkId), "Book Now##WlBk%d", wl.id);

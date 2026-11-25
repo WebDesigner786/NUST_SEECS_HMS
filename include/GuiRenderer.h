@@ -223,6 +223,7 @@ struct GuestsCrmState {
     char formAddress[96]{};
     char formPrefs[128]{};
     bool formIsForeign   = false;
+    bool confirmDiscardGuest = false;
 };
 
 // State for Bookings, Billing & Invoice Preview Modal (Section 9.5, 9.6)
@@ -363,7 +364,8 @@ public:
     bool ghostButton(const char* label, const ImVec2& size = ImVec2(0.0f, 0.0f), bool enabled = true);
     bool dangerButton(const char* label, const ImVec2& size = ImVec2(0.0f, 0.0f), bool enabled = true);
     void drawTooltip(const char* text);
-    void drawSectionHeader(const char* title, const char* subtitle = nullptr);
+    void drawInfoIcon(const char* tooltipText);
+    void drawSectionHeader(const char* title, const char* subtitle = nullptr, const char* algoInfo = nullptr);
     void drawEmptyState(const char* title, const char* subtitle);
     void drawVectorGlyph(ImDrawList* dl, NavGlyph glyph, const ImVec2& center, float size, ImU32 color) const;
 
@@ -421,6 +423,7 @@ private:
     void renderVivaToolsScreen();
     void renderCommandPaletteOverlay(float deltaTime);
     void renderShortcutsOverlay();
+    void renderFirstRunWelcomeModal();
     void updateAndRenderGuidedDemo(float deltaTime);
     void startGuidedDemo();
     void draw90DayOccupancyHeatmap();
@@ -440,6 +443,7 @@ private:
     char                       m_loginUserBuf[64]{};
     char                       m_loginPassBuf[64]{};
     bool                       m_showPassword = false;
+    bool                       m_showDemoAccounts = false;
     std::string                m_loginErrorMsg = "";
 
     // Shell layout & animation state

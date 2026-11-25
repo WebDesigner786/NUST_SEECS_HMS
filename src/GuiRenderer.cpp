@@ -356,6 +356,10 @@ void GuiRenderer::handleGlobalShortcuts() {
     if (ImGui::IsKeyPressed(ImGuiKey_F1, false)) {
         m_showShortcutsOverlay = !m_showShortcutsOverlay;
     }
+    if (m_system.isLoggedIn() && m_system.currentRole() == Role::Admin &&
+        io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_D, false)) {
+        navigateTo(ScreenId::VivaTools);
+    }
     if (m_system.isLoggedIn() && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_K, false)) {
         m_cmdPalette.isOpen = !m_cmdPalette.isOpen;
         if (m_cmdPalette.isOpen) {
@@ -397,6 +401,7 @@ void GuiRenderer::renderFrame(float deltaTime) {
         renderLoginScreen(dt);
     } else {
         renderAuthenticatedShell(dt);
+        renderFirstRunWelcomeModal();
         renderCommandPaletteOverlay(dt);
         updateAndRenderGuidedDemo(dt);
     }
@@ -470,11 +475,11 @@ void GuiRenderer::renderSplashScreen(float deltaTime) {
         dl->AddLine(ImVec2(center.x + hw, center.y - hh), ImVec2(center.x + hw, center.y + hh), whiteCol, stroke);
         dl->AddLine(ImVec2(center.x - hw, center.y), ImVec2(center.x + hw, center.y), whiteCol, stroke);
 
-        // Title & Subtitle
+        // Title & Subtitle (C2: hotel brand, no algorithm names)
         if (m_fonts.headingFont != nullptr) {
             ImGui::PushFont(m_fonts.headingFont);
         }
-        const char* title = "NUST SEECS Hotel Management System";
+        const char* title = Cfg::HOTEL_NAME;
         const ImVec2 titleSz = ImGui::CalcTextSize(title);
         ImGui::SetCursorScreenPos(ImVec2(center.x - titleSz.x * 0.5f, logoMax.y + 24.0f));
         ImGui::TextColored(pal.text, "%s", title);
@@ -482,7 +487,7 @@ void GuiRenderer::renderSplashScreen(float deltaTime) {
             ImGui::PopFont();
         }
 
-        const char* subtitle = "NUST SEECS  ·  Section D  ·  PF Project";
+        const char* subtitle = Cfg::HOTEL_TAGLINE;
         const ImVec2 subSz = ImGui::CalcTextSize(subtitle);
         ImGui::SetCursorScreenPos(ImVec2(center.x - subSz.x * 0.5f, logoMax.y + 62.0f));
         ImGui::TextColored(pal.dimText, "%s", subtitle);
@@ -504,9 +509,9 @@ void GuiRenderer::renderSplashScreen(float deltaTime) {
             ImGui::PushFont(m_fonts.captionFont);
         }
         const char* loadMsg = (progress < 0.4f)
-                                  ? "Verifying SHA-256 audit chain & FNV-1a binary tables..."
-                                  : ((progress < 0.8f) ? "Building CNIC hash index & housekeeping min-heap..."
-                                                       : "Launching Executive Interface...");
+                                  ? "Checking records..."
+                                  : ((progress < 0.8f) ? "Loading rooms and reservations..."
+                                                       : "Opening workspace...");
         const ImVec2 lmSz = ImGui::CalcTextSize(loadMsg);
         ImGui::SetCursorScreenPos(ImVec2(center.x - lmSz.x * 0.5f, barMax.y + 12.0f));
         ImGui::TextColored(pal.dimText, "%s", loadMsg);
@@ -620,17 +625,17 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
         if (m_fonts.headingFont != nullptr) {
             ImGui::PushFont(m_fonts.headingFont);
         }
-        const char* heading = "Sign In to HMS";
+        const char* heading = Cfg::HOTEL_NAME;
         const float hW = ImGui::CalcTextSize(heading).x;
-        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - hW) * 0.5f);
+        ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - hW) * 0.5f));
         ImGui::TextColored(pal.text, "%s", heading);
         if (m_fonts.headingFont != nullptr) {
             ImGui::PopFont();
         }
 
-        const char* sub = "NUST SEECS Grand Hotel Operations";
+        const char* sub = "Staff sign-in";
         const float sW = ImGui::CalcTextSize(sub).x;
-        ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - sW) * 0.5f);
+        ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - sW) * 0.5f));
         ImGui::TextColored(pal.dimText, "%s", sub);
 
         ImGui::Spacing();
@@ -662,6 +667,7 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
         if (ghostButton(showLbl, ImVec2(showBtnW, 34.0f))) {
             m_showPassword = !m_showPassword;
         }
+        drawTooltip(m_showPassword ? "Hide password" : "Show password");
 
         ImGui::Spacing();
         if (isLocked) {
@@ -677,7 +683,7 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
         }
 
         ImGui::Spacing();
-        const bool submitClick = primaryButton(isLocked ? "Account Locked" : "Sign In", ImVec2(-1.0f, 42.0f), !isLocked);
+        const bool submitClick = primaryButton(isLocked ? "Account locked" : "Sign in", ImVec2(-1.0f, 42.0f), !isLocked);
         if ((submitClick || enterPressed) && !isLocked) {
             const LoginResult res = m_system.login(m_loginUserBuf, m_loginPassBuf);
             if (res.success) {
@@ -696,29 +702,37 @@ void GuiRenderer::renderLoginScreen(float deltaTime) {
         if (m_fonts.captionFont != nullptr) {
             ImGui::PushFont(m_fonts.captionFont);
         }
-        ImGui::TextColored(pal.dimText, "Quick Viva Demo Accounts (Click to autofill):");
+        const char* demoToggleLbl = m_showDemoAccounts ? "Hide demo accounts" : "Show demo accounts";
+        if (ghostButton(demoToggleLbl, ImVec2(0.0f, 30.0f))) {
+            m_showDemoAccounts = !m_showDemoAccounts;
+        }
+        if (m_showDemoAccounts) {
+            ImGui::Spacing();
+            ImGui::TextColored(pal.dimText, "Demo accounts");
+        }
         if (m_fonts.captionFont != nullptr) {
             ImGui::PopFont();
         }
-        ImGui::Spacing();
-
-        const float chipW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
-        if (ghostButton("Admin", ImVec2(chipW, 34.0f))) {
-            std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "admin");
-            std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Admin@123");
-            m_loginErrorMsg.clear();
-        }
-        ImGui::SameLine();
-        if (ghostButton("Reception", ImVec2(chipW, 34.0f))) {
-            std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "reception");
-            std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Desk@123");
-            m_loginErrorMsg.clear();
-        }
-        ImGui::SameLine();
-        if (ghostButton("Housekeep", ImVec2(chipW, 34.0f))) {
-            std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "housekeeping");
-            std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Clean@123");
-            m_loginErrorMsg.clear();
+        if (m_showDemoAccounts) {
+            ImGui::Spacing();
+            const float chipW = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2.0f) / 3.0f;
+            if (ghostButton("Admin", ImVec2(chipW, 34.0f))) {
+                std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "admin");
+                std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Admin@123");
+                m_loginErrorMsg.clear();
+            }
+            ImGui::SameLine();
+            if (ghostButton("Reception", ImVec2(chipW, 34.0f))) {
+                std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "reception");
+                std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Desk@123");
+                m_loginErrorMsg.clear();
+            }
+            ImGui::SameLine();
+            if (ghostButton("Housekeeping", ImVec2(chipW, 34.0f))) {
+                std::snprintf(m_loginUserBuf, sizeof(m_loginUserBuf), "housekeeping");
+                std::snprintf(m_loginPassBuf, sizeof(m_loginPassBuf), "Clean@123");
+                m_loginErrorMsg.clear();
+            }
         }
 
         checkChildOverflow("##LoginCardBody");
@@ -743,29 +757,28 @@ void GuiRenderer::renderRoleAllowedNavItems(Role role, std::vector<NavItemSpec>&
     if (role == Role::Admin) {
         outItems = {
             {ScreenId::Dashboard,           "Dashboard",        NavGlyph::Dashboard},
-            {ScreenId::RoomMatrix,          "Room Matrix",      NavGlyph::Rooms},
-            {ScreenId::SmartCheckIn,        "Smart Check-In",   NavGlyph::CheckIn},
+            {ScreenId::RoomMatrix,          "Room matrix",      NavGlyph::Rooms},
+            {ScreenId::SmartCheckIn,        "Smart check-in",   NavGlyph::CheckIn},
             {ScreenId::Timeline,            "Timeline",         NavGlyph::Timeline},
-            {ScreenId::Guests,              "Guests CRM",       NavGlyph::Guests},
+            {ScreenId::Guests,              "Guests",           NavGlyph::Guests},
             {ScreenId::Bookings,            "Bookings",         NavGlyph::Bookings},
             {ScreenId::Billing,             "Billing",          NavGlyph::Billing},
-            {ScreenId::YieldManagement,     "Yield Mgmt",       NavGlyph::Yield},
+            {ScreenId::YieldManagement,     "Pricing",          NavGlyph::Yield},
             {ScreenId::Analytics,           "Analytics",        NavGlyph::Analytics},
             {ScreenId::HousekeepingBoard,   "Housekeeping",     NavGlyph::Housekeeping},
-            {ScreenId::ServiceOrdersKanban, "Service Orders",   NavGlyph::Kanban},
+            {ScreenId::ServiceOrdersKanban, "Service orders",   NavGlyph::Kanban},
             {ScreenId::Staff,               "Staff",            NavGlyph::Staff},
-            {ScreenId::AuditLog,            "Audit Log",        NavGlyph::Audit},
+            {ScreenId::AuditLog,            "Audit log",        NavGlyph::Audit},
             {ScreenId::Backups,             "Backups",          NavGlyph::Backups},
-            {ScreenId::Settings,            "Settings",         NavGlyph::Settings},
-            {ScreenId::VivaTools,           "Viva Tools",       NavGlyph::Viva}
+            {ScreenId::Settings,            "Settings",         NavGlyph::Settings}
         };
     } else if (role == Role::Receptionist) {
         outItems = {
             {ScreenId::Dashboard,           "Dashboard",        NavGlyph::Dashboard},
-            {ScreenId::RoomMatrix,          "Room Matrix",      NavGlyph::Rooms},
-            {ScreenId::SmartCheckIn,        "Smart Check-In",   NavGlyph::CheckIn},
+            {ScreenId::RoomMatrix,          "Room matrix",      NavGlyph::Rooms},
+            {ScreenId::SmartCheckIn,        "Smart check-in",   NavGlyph::CheckIn},
             {ScreenId::Timeline,            "Timeline",         NavGlyph::Timeline},
-            {ScreenId::Guests,              "Guests CRM",       NavGlyph::Guests},
+            {ScreenId::Guests,              "Guests",           NavGlyph::Guests},
             {ScreenId::Bookings,            "Bookings",         NavGlyph::Bookings},
             {ScreenId::Billing,             "Billing",          NavGlyph::Billing},
             {ScreenId::Waitlist,            "Waitlist",         NavGlyph::Waitlist}
@@ -773,9 +786,9 @@ void GuiRenderer::renderRoleAllowedNavItems(Role role, std::vector<NavItemSpec>&
     } else {
         outItems = {
             {ScreenId::Dashboard,           "Dashboard",        NavGlyph::Dashboard},
-            {ScreenId::HousekeepingBoard,   "Dispatch Board",   NavGlyph::Housekeeping},
-            {ScreenId::RoomMatrix,          "Room Matrix",      NavGlyph::Rooms},
-            {ScreenId::ServiceOrdersKanban, "Service Kanban",   NavGlyph::Kanban}
+            {ScreenId::HousekeepingBoard,   "Housekeeping",     NavGlyph::Housekeeping},
+            {ScreenId::RoomMatrix,          "Room matrix",      NavGlyph::Rooms},
+            {ScreenId::ServiceOrdersKanban, "Service orders",   NavGlyph::Kanban}
         };
     }
 }
@@ -855,7 +868,7 @@ void GuiRenderer::renderTopBar(float height) {
 
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(pal.dimText, "HMS  /");
+        ImGui::TextColored(pal.dimText, "%s  /", Cfg::HOTEL_NAME);
         ImGui::SameLine();
         ImGui::TextColored(pal.text, "%s", screenDisplayName(m_activeScreen));
 
@@ -866,8 +879,34 @@ void GuiRenderer::renderTopBar(float height) {
             if (ghostButton(undoLabel.c_str(), ImVec2(0.0f, 32.0f))) {
                 m_system.undo();
             }
-            drawTooltip("Ctrl+Z to Undo last action");
+            drawTooltip("Undo last action (Ctrl+Z)");
         }
+
+        // Gather real operational alerts for the Alerts bell dropdown (C5)
+        const HotelDatabase& db = m_system.db();
+        const int tamperIdx = m_system.lastAuditTamperIndex();
+        const long long nowTotalMin = static_cast<long long>(DateUtil::todayDayNumber()) * 1440LL +
+                                      static_cast<long long>(DateUtil::currentMinuteOfDay());
+        std::vector<const Invoice*> unpaidInvoices;
+        for (const Invoice& inv : db.invoices) {
+            if (!inv.paid) {
+                unpaidInvoices.push_back(&inv);
+            }
+        }
+        std::vector<const HousekeepingTask*> overdueTasks;
+        for (const HousekeepingTask& t : db.tasks) {
+            if (t.status == TaskStatus::Done) {
+                continue;
+            }
+            const long long createdMin = static_cast<long long>(t.createdDay) * 1440LL + static_cast<long long>(t.createdMinute);
+            const long long ageMin = std::max(0LL, nowTotalMin - createdMin);
+            if (t.type == TaskType::Maintenance || ageMin >= 120LL) {
+                overdueTasks.push_back(&t);
+            }
+        }
+        const int alertCount = (tamperIdx != -1 ? 1 : 0) +
+                               static_cast<int>(unpaidInvoices.size()) +
+                               static_cast<int>(overdueTasks.size());
 
         // Right-aligned toolbar cluster (measured dynamically so search & buttons never clip)
         const char* searchHint = "Search (Ctrl+K)";
@@ -876,8 +915,7 @@ void GuiRenderer::renderTopBar(float height) {
         const float clockW = ImGui::CalcTextSize(clockStr.c_str()).x;
         const char* themeBtnTxt = (m_theme.getCurrentMode() == ThemeMode::MidnightObsidian) ? "Light" : "Dark";
         const float themeW = visibleTextSize(themeBtnTxt).x + 24.0f;
-        const int unread = m_system.unreadNotificationCount();
-        const std::string bellLabel = (unread > 0) ? ("Alerts (" + std::to_string(unread) + ")") : "Alerts";
+        const std::string bellLabel = (alertCount > 0) ? ("Alerts (" + std::to_string(alertCount) + ")") : "Alerts";
         const float bellW = visibleTextSize(bellLabel.c_str()).x + 24.0f;
         const float clusterW = searchW + 12.0f + clockW + 12.0f + themeW + 10.0f + bellW + 12.0f + 34.0f + 16.0f;
         const float rightStart = vp->Size.x - clusterW;
@@ -906,27 +944,93 @@ void GuiRenderer::renderTopBar(float height) {
             m_system.db().settings.themeChoice = (m_theme.getCurrentMode() == ThemeMode::ExecutivePearl) ? 1 : 0;
             m_system.fileManager().saveSettings(m_system.db().settings);
         }
-        drawTooltip("Toggle Midnight Obsidian / Executive Pearl (Ctrl+T)");
+        drawTooltip("Switch light and dark theme (Ctrl+T)");
 
-        // Notification Bell with unread badge
+        // Operational Alerts Bell dropdown (C5: tamper warning, unpaid invoices, rooms overdue for cleaning)
         ImGui::SameLine(0.0f, 10.0f);
         if (ghostButton(bellLabel.c_str(), ImVec2(bellW, 34.0f))) {
             ImGui::OpenPopup("##NotificationsPopup");
             m_system.markNotificationsRead();
         }
+        drawTooltip("View operational alerts");
         if (ImGui::BeginPopup("##NotificationsPopup")) {
-            ImGui::TextColored(pal.accent, "Recent Notifications");
+            ImGui::TextColored(pal.accent, "Operational alerts (%d)", alertCount);
             ImGui::Separator();
-            const auto& hist = m_system.notificationHistory();
-            if (hist.empty()) {
-                ImGui::TextColored(pal.dimText, "No notifications yet.");
+
+            if (alertCount == 0) {
+                ImGui::TextColored(pal.dimText, "No active alerts.");
             } else {
-                const int startIdx = std::max(0, static_cast<int>(hist.size()) - 8);
-                for (int i = static_cast<int>(hist.size()) - 1; i >= startIdx; --i) {
-                    const SystemNotice& n = hist[static_cast<std::size_t>(i)];
-                    ImGui::TextColored(pal.text, "%s", n.title.c_str());
-                    ImGui::TextColored(pal.dimText, "  %s", n.message.c_str());
+                if (tamperIdx != -1) {
+                    drawBadge("WARNING", pal.statusOccupied);
+                    ImGui::SameLine();
+                    char tMsg[96]{};
+                    std::snprintf(tMsg, sizeof(tMsg), "Audit log mismatch at entry #%d##AltTamper", tamperIdx);
+                    if (ImGui::Selectable(tMsg)) {
+                        if (m_system.currentRole() == Role::Admin) {
+                            navigateTo(ScreenId::AuditLog);
+                        }
+                        ImGui::CloseCurrentPopup();
+                    }
                     ImGui::Separator();
+                }
+
+                if (!unpaidInvoices.empty()) {
+                    ImGui::TextColored(pal.dimText, "Unpaid invoices (%zu)", unpaidInvoices.size());
+                    const std::size_t maxShow = std::min<std::size_t>(unpaidInvoices.size(), 5U);
+                    for (std::size_t i = 0U; i < maxShow; ++i) {
+                        const Invoice* inv = unpaidInvoices[i];
+                        const Guest* g = m_system.findGuestById(inv->guestId);
+                        char rowLbl[128]{};
+                        std::snprintf(
+                            rowLbl,
+                            sizeof(rowLbl),
+                            "%s · %s · %s##AltInv%d",
+                            inv->number.c_str(),
+                            g ? g->fullName.c_str() : "Guest",
+                            formatPKR(inv->grandTotal).c_str(),
+                            inv->id
+                        );
+                        if (ImGui::Selectable(rowLbl)) {
+                            if (m_system.currentRole() != Role::Housekeeping) {
+                                navigateTo(ScreenId::Billing);
+                            }
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    if (unpaidInvoices.size() > maxShow) {
+                        ImGui::TextColored(pal.dimText, "  +%zu more unpaid invoices", unpaidInvoices.size() - maxShow);
+                    }
+                    ImGui::Separator();
+                }
+
+                if (!overdueTasks.empty()) {
+                    ImGui::TextColored(pal.dimText, "Overdue cleaning and maintenance (%zu)", overdueTasks.size());
+                    const std::size_t maxShow = std::min<std::size_t>(overdueTasks.size(), 5U);
+                    for (std::size_t i = 0U; i < maxShow; ++i) {
+                        const HousekeepingTask* t = overdueTasks[i];
+                        const Room* r = m_system.findRoomById(t->roomId);
+                        const long long createdMin = static_cast<long long>(t->createdDay) * 1440LL + static_cast<long long>(t->createdMinute);
+                        const long long hrs = std::max(0LL, nowTotalMin - createdMin) / 60LL;
+                        char rowLbl[128]{};
+                        std::snprintf(
+                            rowLbl,
+                            sizeof(rowLbl),
+                            "Room %d · %s (%lldh ago)##AltHk%d",
+                            r ? r->number : 0,
+                            toString(t->type),
+                            hrs,
+                            t->id
+                        );
+                        if (ImGui::Selectable(rowLbl)) {
+                            if (m_system.currentRole() != Role::Receptionist) {
+                                navigateTo(ScreenId::HousekeepingBoard);
+                            }
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    if (overdueTasks.size() > maxShow) {
+                        ImGui::TextColored(pal.dimText, "  +%zu more tasks", overdueTasks.size() - maxShow);
+                    }
                 }
             }
             ImGui::EndPopup();
@@ -990,9 +1094,9 @@ void GuiRenderer::renderSidebar(float topBarHeight, float statusBarHeight) {
         dl->AddLine(ImVec2(lc.x - 6.0f, lc.y), ImVec2(lc.x + 6.0f, lc.y), IM_COL32(255, 255, 255, 255), 2.8f);
 
         if (!m_sidebarCollapsed && m_sidebarWidth > 140.0f) {
-            dl->AddText(ImVec2(sqMax.x + 10.0f, sqMin.y + 2.0f), ThemeEngine::vec4ToU32(pal.text), "NUST SEECS");
+            dl->AddText(ImVec2(sqMax.x + 10.0f, sqMin.y + 1.0f), ThemeEngine::vec4ToU32(pal.text), "Grand Meridian");
             if (m_fonts.captionFont != nullptr) {
-                dl->AddText(m_fonts.captionFont, 14.0f, ImVec2(sqMax.x + 10.0f, sqMin.y + 20.0f), ThemeEngine::vec4ToU32(pal.dimText), "Hotel Mgmt Suite");
+                dl->AddText(m_fonts.captionFont, 14.0f, ImVec2(sqMax.x + 10.0f, sqMin.y + 21.0f), ThemeEngine::vec4ToU32(pal.dimText), Cfg::HOTEL_TAGLINE);
             }
         }
         ImGui::Dummy(ImVec2(0.0f, 44.0f));
@@ -1064,8 +1168,11 @@ void GuiRenderer::renderSidebar(float topBarHeight, float statusBarHeight) {
             drawBadge(toString(r), roleCol);
             ImGui::Spacing();
         }
-        if (dangerButton(m_sidebarCollapsed ? "Out" : "Sign Out", ImVec2(-1.0f, 34.0f))) {
+        if (dangerButton(m_sidebarCollapsed ? "Out" : "Sign out", ImVec2(-1.0f, 34.0f))) {
             m_system.logout();
+        }
+        if (m_sidebarCollapsed) {
+            drawTooltip("Sign out");
         }
     }
     ImGui::End();
@@ -1193,18 +1300,61 @@ void GuiRenderer::renderActiveScreenContent() {
  * Big-O: O(1) time, O(1) space.
  */
 void GuiRenderer::renderUpcomingModulePreview(ScreenId screen) {
-    drawSectionHeader(screenDisplayName(screen), "Scheduled for interactive implementation in Phases 5–8");
-    if (beginCard("##ModulePreviewCard", "Module Ready for Next Phase", ImVec2(0.0f, 0.0f), true)) {
+    drawSectionHeader(screenDisplayName(screen), "This view is not configured.");
+    if (beginCard("##ModulePreviewCard", "Module unavailable", ImVec2(0.0f, 0.0f), true)) {
         drawEmptyState(
             screenDisplayName(screen),
-            "Core backend state in HotelSystem is active. Interactive GUI screen will be wired in its designated phase."
+            "Return to the dashboard to open active hotel views."
         );
         ImGui::Spacing();
-        if (primaryButton("Return to Dashboard", ImVec2(0.0f, 38.0f))) {
+        if (primaryButton("Return to dashboard", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::Dashboard);
         }
     }
     endCard();
+}
+
+/*
+ * Purpose: Shows a one-time welcome dialog when signing in as Admin on an empty database (C3).
+ * Inputs: None.
+ * Outputs: Prompts user to load sample data or start empty; persists welcomeShown in settings.dat.
+ * Big-O: O(1) time.
+ */
+void GuiRenderer::renderFirstRunWelcomeModal() {
+    if (m_overflowDetectEnabled || m_system.currentRole() != Role::Admin) {
+        return;
+    }
+    AppSettings& settings = m_system.db().settings;
+    const bool isEmptyDb = m_system.db().guests.empty() && m_system.db().bookings.empty();
+    if (!settings.welcomeShown && isEmptyDb && !ImGui::IsPopupOpen("##WelcomeFirstRun")) {
+        ImGui::OpenPopup("##WelcomeFirstRun");
+    }
+
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(480.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("##WelcomeFirstRun", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+        const ThemePalette& pal = m_theme.getActivePalette();
+        ImGui::TextColored(pal.text, "%s", Cfg::HOTEL_NAME);
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::TextWrapped("Welcome. Start with sample data or an empty system?");
+        ImGui::Spacing();
+        ImGui::Spacing();
+        if (primaryButton("Load sample data", ImVec2(0.0f, 38.0f))) {
+            m_system.seedVivaDemoData();
+            m_system.db().settings.welcomeShown = true;
+            m_system.fileManager().saveSettings(m_system.db().settings);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ghostButton("Start empty", ImVec2(0.0f, 38.0f))) {
+            settings.welcomeShown = true;
+            m_system.fileManager().saveSettings(settings);
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
 // =============================================================================
@@ -1658,12 +1808,47 @@ void GuiRenderer::drawTooltip(const char* text) {
 }
 
 /*
- * Purpose: Draws a consistent page/section heading with 28px title and optional dimmed subtitle.
- * Inputs: title, optional subtitle.
+ * Purpose: Draws a small "(i)" info badge that reveals technical implementation details on hover (C1).
+ * Inputs: tooltipText (algorithm, Big-O, file::function).
+ * Outputs: Renders inline info icon with wrapped tooltip.
+ * Big-O: O(1) time, O(1) space.
+ */
+void GuiRenderer::drawInfoIcon(const char* tooltipText) {
+    if (tooltipText == nullptr || tooltipText[0] == '\0') {
+        return;
+    }
+    const ThemePalette& pal = m_theme.getActivePalette();
+    if (m_fonts.captionFont != nullptr) {
+        ImGui::PushFont(m_fonts.captionFont);
+    }
+    const ImVec2 tSz = ImGui::CalcTextSize("i");
+    const float r = std::max(10.0f, tSz.y * 0.62f);
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const ImVec2 center(pos.x + r, pos.y + r + 2.0f);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddCircleFilled(center, r, ThemeEngine::vec4ToU32(ImVec4(pal.accent.x, pal.accent.y, pal.accent.z, 0.16f)), 20);
+    dl->AddCircle(center, r, ThemeEngine::vec4ToU32(ImVec4(pal.accent.x, pal.accent.y, pal.accent.z, 0.65f)), 20, 1.2f);
+    dl->AddText(ImVec2(center.x - tSz.x * 0.5f, center.y - tSz.y * 0.5f), ThemeEngine::vec4ToU32(pal.accent), "i");
+    ImGui::Dummy(ImVec2(r * 2.0f + 4.0f, r * 2.0f + 4.0f));
+    if (m_fonts.captionFont != nullptr) {
+        ImGui::PopFont();
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNone)) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(420.0f);
+        ImGui::TextUnformatted(tooltipText);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
+/*
+ * Purpose: Draws a consistent page/section heading with optional "(i)" technical tooltip and plain subtitle.
+ * Inputs: title, optional subtitle, optional algoInfo tooltip.
  * Outputs: Renders section header block.
  * Big-O: O(1) time, O(1) space.
  */
-void GuiRenderer::drawSectionHeader(const char* title, const char* subtitle) {
+void GuiRenderer::drawSectionHeader(const char* title, const char* subtitle, const char* algoInfo) {
     const ThemePalette& pal = m_theme.getActivePalette();
     if (m_fonts.headingFont != nullptr) {
         ImGui::PushFont(m_fonts.headingFont);
@@ -1671,6 +1856,11 @@ void GuiRenderer::drawSectionHeader(const char* title, const char* subtitle) {
     ImGui::TextColored(pal.text, "%s", title);
     if (m_fonts.headingFont != nullptr) {
         ImGui::PopFont();
+    }
+    if (algoInfo != nullptr && algoInfo[0] != '\0') {
+        ImGui::SameLine(0.0f, 10.0f);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
+        drawInfoIcon(algoInfo);
     }
     if (subtitle != nullptr && subtitle[0] != '\0') {
         if (m_fonts.captionFont != nullptr) {
@@ -1844,22 +2034,22 @@ ImVec4 GuiRenderer::tierColor(LoyaltyTier tier) const {
 const char* GuiRenderer::screenDisplayName(ScreenId screen) {
     switch (screen) {
         case ScreenId::Dashboard:           return "Dashboard";
-        case ScreenId::RoomMatrix:          return "Interactive Room Matrix";
-        case ScreenId::SmartCheckIn:        return "Smart Check-In Wizard";
-        case ScreenId::Timeline:            return "Booking Timeline (Gantt)";
-        case ScreenId::Guests:              return "Guest CRM Registry";
-        case ScreenId::Bookings:            return "Bookings Management";
-        case ScreenId::Billing:             return "Billing & Invoices";
-        case ScreenId::Waitlist:            return "FIFO Waitlist Queue";
-        case ScreenId::YieldManagement:     return "Dynamic Yield Management";
-        case ScreenId::Analytics:           return "Executive Analytics";
-        case ScreenId::HousekeepingBoard:   return "Housekeeping Dispatch Board";
-        case ScreenId::ServiceOrdersKanban: return "Service Orders Kanban";
-        case ScreenId::Staff:               return "Staff & RBAC Accounts";
-        case ScreenId::AuditLog:            return "Tamper-Evident Audit Log";
-        case ScreenId::Backups:             return "Snapshot Backups";
-        case ScreenId::Settings:            return "System Settings";
-        case ScreenId::VivaTools:           return "Viva Tools & Algorithm X-Ray";
+        case ScreenId::RoomMatrix:          return "Room matrix";
+        case ScreenId::SmartCheckIn:        return "Smart check-in";
+        case ScreenId::Timeline:            return "Booking timeline";
+        case ScreenId::Guests:              return "Guest directory";
+        case ScreenId::Bookings:            return "Bookings";
+        case ScreenId::Billing:             return "Billing and invoices";
+        case ScreenId::Waitlist:            return "Waitlist";
+        case ScreenId::YieldManagement:     return "Pricing and demand";
+        case ScreenId::Analytics:           return "Analytics";
+        case ScreenId::HousekeepingBoard:   return "Housekeeping";
+        case ScreenId::ServiceOrdersKanban: return "Service orders";
+        case ScreenId::Staff:               return "Staff accounts";
+        case ScreenId::AuditLog:            return "Audit log";
+        case ScreenId::Backups:             return "Backups and night audit";
+        case ScreenId::Settings:            return "Settings";
+        case ScreenId::VivaTools:           return "Developer & Evaluation Tools";
     }
     return "Dashboard";
 }

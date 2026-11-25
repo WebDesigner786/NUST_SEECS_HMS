@@ -29,8 +29,9 @@ void GuiRenderer::renderYieldManagementScreen() {
     const YieldPricingResult liveToday = m_system.getTodayYieldPricing();
 
     drawSectionHeader(
-        "Dynamic Yield Management & Pricing Simulator",
-        "Occupancy, peak-season & weekend multipliers (capped 1.60x) · Price elasticity revenue curve · Audit-logged overrides"
+        "Pricing and demand",
+        "Preview occupancy-based room rates and apply temporary pricing overrides.",
+        "Algorithm: Dynamic Yield Pricing (O(1)) + Capacity-Aware Yield Curve Simulation across 61 multipliers (O(S), S=61).\nFormula: D0 = occ * 50 * 1.35; D(s) = min(50, D0 * s^epsilon); R(s) = roundTo10(base * s) * D(s).\nSource: Algorithms.cpp::computeYieldPricing, simulateYieldCurve"
     );
 
     if (ImGui::BeginTable("##YieldSplit", 2, ImGuiTableFlags_SizingStretchProp)) {
@@ -40,15 +41,15 @@ void GuiRenderer::renderYieldManagementScreen() {
 
         // Left: Simulator Sliders + Live Price Table + Manual Override
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##YieldSimControls", "Pricing Simulator Parameters", ImVec2(0.0f, 0.0f), true)) {
-            ImGui::TextColored(pal.dimText, "Simulated Occupancy (%%)");
+        if (beginCard("##YieldSimControls", "Pricing simulator", ImVec2(0.0f, 0.0f), true)) {
+            ImGui::TextColored(pal.dimText, "Simulated occupancy (%%)");
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::SliderFloat("##SimOcc", &m_yieldState.occSliderPct, 0.0f, 100.0f, "%.0f%%");
             ImGui::Spacing();
-            ImGui::Checkbox("Peak Season (Dec–Jan / Jun–Aug: x1.15)", &m_yieldState.peakSeason);
-            ImGui::Checkbox("Weekend Night (Fri / Sat: x1.10)", &m_yieldState.weekendNight);
+            ImGui::Checkbox("Peak season (Dec–Jan / Jun–Aug: x1.15)", &m_yieldState.peakSeason);
+            ImGui::Checkbox("Weekend night (Fri / Sat: x1.10)", &m_yieldState.weekendNight);
             ImGui::Spacing();
-            ImGui::TextColored(pal.dimText, "Price Elasticity (epsilon)");
+            ImGui::TextColored(pal.dimText, "Demand sensitivity");
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::SliderFloat("##SimEps", &m_yieldState.elasticityEps, -2.5f, -0.2f, "%.2f");
 
@@ -65,8 +66,8 @@ void GuiRenderer::renderYieldManagementScreen() {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
-            ImGui::TextColored(pal.goldHighlight, "Simulated Surge: x%.2f", simRes.surge);
-            ImGui::TextColored(pal.dimText, "Occ x%.2f · Seas x%.2f · Wknd x%.2f", simRes.occMult, simRes.seasonMult, simRes.weekendMult);
+            ImGui::TextColored(pal.goldHighlight, "Simulated surge: x%.2f", simRes.surge);
+            ImGui::TextColored(pal.dimText, "Occ x%.2f · Season x%.2f · Weekend x%.2f", simRes.occMult, simRes.seasonMult, simRes.weekendMult);
             ImGui::Spacing();
             ImGui::Text("Standard     : %s", formatPKR(simRes.standardPrice).c_str());
             ImGui::Text("Deluxe       : %s", formatPKR(simRes.deluxePrice).c_str());
@@ -76,28 +77,28 @@ void GuiRenderer::renderYieldManagementScreen() {
         endCard();
 
         ImGui::Spacing();
-        if (beginCard("##YieldOverrideCard", "Admin Manual Surge Override (Audit-Logged)", ImVec2(0.0f, 0.0f), true)) {
-            ImGui::TextColored(pal.dimText, "Live Today Surge: x%.2f  |  Override: %s",
+        if (beginCard("##YieldOverrideCard", "Manual surge override", ImVec2(0.0f, 0.0f), true)) {
+            ImGui::TextColored(pal.dimText, "Today's surge: x%.2f  |  Mode: %s",
                                liveToday.surge,
-                               (m_system.db().settings.manualSurgeOverride > 0.0) ? "ACTIVE" : "Auto");
+                               (m_system.db().settings.manualSurgeOverride > 0.0) ? "Manual" : "Automatic");
             ImGui::Spacing();
-            ImGui::TextColored(pal.dimText, "Override Multiplier");
+            ImGui::TextColored(pal.dimText, "Override multiplier");
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::SliderFloat("##OvMult", &m_yieldState.overrideMult, 1.00f, 1.60f, "x%.2f");
             ImGui::Spacing();
             ImGui::TextColored(pal.dimText, "Reason");
             ImGui::SetNextItemWidth(-1.0f);
-            ImGui::InputTextWithHint("##OvReason", "e.g. Islamabad Tech Summit peak demand", m_yieldState.overrideReason, sizeof(m_yieldState.overrideReason));
+            ImGui::InputTextWithHint("##OvReason", "Reason for override", m_yieldState.overrideReason, sizeof(m_yieldState.overrideReason));
             ImGui::Spacing();
-            if (primaryButton("Apply Override", ImVec2(0.0f, 34.0f))) {
+            if (primaryButton("Apply override", ImVec2(0.0f, 34.0f))) {
                 std::string err;
                 if (!m_system.setManualSurgeOverride(static_cast<double>(m_yieldState.overrideMult), m_yieldState.overrideReason, &err)) {
-                    Toast::push(NoticeType::Error, "Override Rejected", err);
+                    Toast::push(NoticeType::Error, "Override rejected", err);
                 }
             }
             ImGui::SameLine();
-            if (ghostButton("Reset to Auto", ImVec2(0.0f, 34.0f))) {
-                m_system.setManualSurgeOverride(0.0, "Restored automatic yield pricing");
+            if (ghostButton("Reset to automatic", ImVec2(0.0f, 34.0f))) {
+                m_system.setManualSurgeOverride(0.0, "Restored automatic pricing");
             }
         }
         endCard();
@@ -105,7 +106,16 @@ void GuiRenderer::renderYieldManagementScreen() {
         // Right: ImPlot Revenue vs Surge Curve (1.0 - 1.6)
         ImGui::TableSetColumnIndex(1);
         const float yieldCardH = std::max(520.0f, ImGui::GetContentRegionAvail().y - 4.0f);
-        if (beginCard("##YieldCurveCard", "Expected Revenue R(s) = roundTo10(base * s) * min(50, D0 * s^epsilon)", ImVec2(0.0f, yieldCardH))) {
+        if (beginCard("##YieldCurveCard", nullptr, ImVec2(0.0f, yieldCardH))) {
+            ImGui::TextColored(pal.text, "Expected nightly revenue by surge level");
+            ImGui::SameLine(0.0f, 8.0f);
+            drawInfoIcon(
+                "Formula: D0 = simulatedOccupancy * 50 * 1.35; D(s) = min(50, D0 * s^epsilon); "
+                "R(s) = roundTo10(base * s) * D(s).\nComplexity: O(S), S = 61 surge steps.\n"
+                "Source: Algorithms.cpp::simulateYieldCurve"
+            );
+            ImGui::Separator();
+            ImGui::Spacing();
             const int simOccRooms = static_cast<int>(std::llround((m_yieldState.occSliderPct / 100.0f) * static_cast<float>(Cfg::TOTAL_ROOMS)));
             const YieldPricingResult simRes = computeYieldPricing(
                 simOccRooms, Cfg::TOTAL_ROOMS, m_yieldState.peakSeason, m_yieldState.weekendNight, true, 0.0
@@ -272,7 +282,7 @@ void GuiRenderer::draw90DayOccupancyHeatmap() {
         }
         if (hovered) {
             ImGui::BeginTooltip();
-            ImGui::TextColored(pal.accent, "%s", DateUtil::formatDate(dayNum).c_str());
+            ImGui::TextColored(pal.accent, "%s", DateUtil::formatDateUI(dayNum).c_str());
             ImGui::Text("Occupancy: %.1f%%", occ);
             ImGui::Text("Revenue  : %s", formatPKR(rev).c_str());
             ImGui::EndTooltip();
@@ -302,11 +312,12 @@ void GuiRenderer::renderAnalyticsScreen() {
     const int32_t today = DateUtil::todayDayNumber();
 
     drawSectionHeader(
-        "Executive Analytics & 7-Day Regression Forecast",
-        "GitHub-style 90-day occupancy heatmap + least-squares linear regression with shaded +/- 1-sigma confidence band"
+        "Analytics",
+        "Ninety-day occupancy trends and seven-day revenue and occupancy projections.",
+        "Algorithm: Ordinary Least-Squares Linear Regression with +/- 1-sigma residual band (O(N), N=30) + 91-day relative bucket heatmap (O(D), D=91).\nSource: Algorithms.cpp::compute7DayForecast, Gui_Admin.cpp::draw90DayOccupancyHeatmap"
     );
 
-    if (beginCard("##HeatmapCard", "90-Day Occupancy Heatmap Calendar", ImVec2(0.0f, 0.0f), true)) {
+    if (beginCard("##HeatmapCard", "90-day occupancy calendar", ImVec2(0.0f, 0.0f), true)) {
         draw90DayOccupancyHeatmap();
     }
     endCard();
@@ -344,7 +355,7 @@ void GuiRenderer::renderAnalyticsScreen() {
         auto plotForecastCard = [&](const char* cardId, const char* title, const std::vector<double>& hist,
                                     const LinearRegressionForecast& fc, const char* yLbl, const ImVec4& lineCol) {
             if (beginCard(cardId, title, ImVec2(0.0f, forecastCardH))) {
-                ImGui::TextColored(pal.dimText, "Regression: %s", fc.formulaText.c_str());
+                ImGui::TextColored(pal.dimText, "Trend: %s", fc.formulaText.c_str());
                 const int hn = static_cast<int>(hist.size());
                 std::vector<double> xh(static_cast<std::size_t>(hn));
                 for (int i = 0; i < hn; ++i) { xh[static_cast<std::size_t>(i)] = static_cast<double>(i + 1); }
@@ -403,28 +414,29 @@ void GuiRenderer::renderHousekeepingBoardScreen() {
     const std::vector<HousekeepingTask> ordered = m_system.getHousekeepingDispatchOrder();
 
     drawSectionHeader(
-        "Housekeeping & Maintenance Min-Heap Dispatch Board",
-        "Custom Binary Min-Heap keyed on -P where P = 3U + V + E + 2*sev · Auto-recomputed every 30s"
+        "Housekeeping",
+        "Track room cleaning and maintenance tasks ordered by urgency.",
+        "Algorithm: Custom array-backed Binary Min-Heap keyed on -P where P = 3U + V + E + 2*sev (recomputed every 30s).\nComplexity: O(log T) insert/pop, O(T log T) full dispatch order.\nSource: Algorithms.cpp::TaskMinHeap, HotelSystem.cpp::recomputeAllTaskPriorities"
     );
 
     if (beginCard("##HkToolbar", nullptr, ImVec2(0.0f, 0.0f), true)) {
-        if (primaryButton("Recompute Heap Priorities Now", ImVec2(0.0f, 34.0f))) {
+        if (primaryButton("Refresh priorities", ImVec2(0.0f, 34.0f))) {
             m_system.recomputeAllTaskPriorities();
-            Toast::push(NoticeType::Info, "Min-Heap Rebuilt", "Recomputed all task priority scores.");
+            Toast::push(NoticeType::Info, "Priorities updated", "All housekeeping and maintenance priorities were recalculated.");
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(200.0f);
-        ImGui::InputTextWithHint("##HkAssignee", "Assignee name...", m_hkReassignBuf, sizeof(m_hkReassignBuf));
+        ImGui::InputTextWithHint("##HkAssignee", "Assignee name", m_hkReassignBuf, sizeof(m_hkReassignBuf));
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
-        ImGui::TextColored(pal.dimText, "Active Tasks in Heap: %zu", ordered.size());
+        ImGui::TextColored(pal.dimText, "Open tasks: %zu", ordered.size());
     }
     endCard();
     ImGui::Spacing();
 
-    if (beginCard("##HkListCard", "Priority Queue (Heap-Pop Order)", ImVec2(0.0f, 0.0f))) {
+    if (beginCard("##HkListCard", "Priority queue", ImVec2(0.0f, 0.0f))) {
         if (ordered.empty()) {
-            drawEmptyState("All Rooms Ready", "The housekeeping & maintenance min-heap is currently empty.");
+            drawEmptyState("All rooms ready", "There are no pending cleaning or maintenance tasks.");
         } else {
             for (std::size_t i = 0U; i < ordered.size(); ++i) {
                 const HousekeepingTask& t = ordered[i];
@@ -522,8 +534,9 @@ void GuiRenderer::renderServiceOrdersKanbanScreen() {
     const HotelDatabase& db = m_system.db();
 
     drawSectionHeader(
-        "Service Orders Kanban Board",
-        "Drag cards across Ordered -> Preparing -> Delivered · Delivering automatically posts to guest folio"
+        "Service orders",
+        "Move room service requests from ordered to delivered and bill them to the guest folio.",
+        "Algorithm: Linear order stage tracking with automatic folio add-on posting.\nComplexity: O(O) render, O(B) booking charge post.\nSource: HotelSystem.cpp::moveServiceOrderStage, Gui_Admin.cpp::renderServiceOrdersKanbanScreen"
     );
 
     // Quick Create Order bar
@@ -550,7 +563,7 @@ void GuiRenderer::renderServiceOrdersKanbanScreen() {
         ImGui::Combo("##KbType", &m_kanbanState.newOrderTypeIdx, addOnTypes, 5);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(185.0f);
-        ImGui::InputTextWithHint("##KbItem", "Item (e.g. Club Sandwich)", m_kanbanState.newOrderItem, sizeof(m_kanbanState.newOrderItem));
+        ImGui::InputTextWithHint("##KbItem", "Item name", m_kanbanState.newOrderItem, sizeof(m_kanbanState.newOrderItem));
         ImGui::SameLine();
         ImGui::SetNextItemWidth(65.0f);
         ImGui::InputInt("Qty##KbQ", &m_kanbanState.newOrderQty);
@@ -662,26 +675,31 @@ void GuiRenderer::renderStaffScreen() {
     const ThemePalette& pal = m_theme.getActivePalette();
     const HotelDatabase& db = m_system.db();
 
-    drawSectionHeader("Staff & RBAC Accounts", "Salted 1,000-round SHA-256 credentials · Server-side role enforcement");
+    drawSectionHeader(
+        "Staff accounts",
+        "Create staff logins, assign roles, and enable or disable account access.",
+        "Algorithm: Salted 1,000-round SHA-256 key stretching + server-side RBAC matrix check.\nComplexity: O(1) per login verification (fixed 1,000 rounds), O(U) staff listing.\nSource: Sha256.cpp::stretchPassword, HotelSystem.cpp::createUser, setUserActive"
+    );
 
-    if (beginCard("##StaffAddCard", "Create New Staff Account", ImVec2(0.0f, 0.0f), true)) {
+    if (beginCard("##StaffAddCard", "Create staff account", ImVec2(0.0f, 0.0f), true)) {
         const char* roles[] = {"Admin", "Receptionist", "Housekeeping"};
-        ImGui::SetNextItemWidth(150.0f); ImGui::InputTextWithHint("##StU", "Username", m_staffState.newUserBuf, sizeof(m_staffState.newUserBuf));
+        bool enterCreate = false;
+        ImGui::SetNextItemWidth(150.0f); enterCreate |= ImGui::InputTextWithHint("##StU", "Username", m_staffState.newUserBuf, sizeof(m_staffState.newUserBuf), ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150.0f); ImGui::InputTextWithHint("##StP", "Password (>=6)", m_staffState.newPassBuf, sizeof(m_staffState.newPassBuf), ImGuiInputTextFlags_Password);
+        ImGui::SetNextItemWidth(150.0f); enterCreate |= ImGui::InputTextWithHint("##StP", "Password (6+ chars)", m_staffState.newPassBuf, sizeof(m_staffState.newPassBuf), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(190.0f); ImGui::InputTextWithHint("##StN", "Display Name", m_staffState.newNameBuf, sizeof(m_staffState.newNameBuf));
+        ImGui::SetNextItemWidth(190.0f); enterCreate |= ImGui::InputTextWithHint("##StN", "Display name", m_staffState.newNameBuf, sizeof(m_staffState.newNameBuf), ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(140.0f); ImGui::Combo("##StR", &m_staffState.newRoleIdx, roles, 3);
         ImGui::SameLine();
-        if (primaryButton("Create User", ImVec2(0.0f, 34.0f))) {
+        if (primaryButton("Create account", ImVec2(0.0f, 34.0f)) || enterCreate) {
             std::string err;
             if (m_system.createUser(m_staffState.newUserBuf, m_staffState.newPassBuf, static_cast<Role>(m_staffState.newRoleIdx), m_staffState.newNameBuf, &err)) {
                 m_staffState.newUserBuf[0] = '\0';
                 m_staffState.newPassBuf[0] = '\0';
                 m_staffState.newNameBuf[0] = '\0';
             } else {
-                Toast::push(NoticeType::Error, "Create User Failed", err);
+                Toast::push(NoticeType::Error, "Could not create account", err);
             }
         }
     }
@@ -756,7 +774,11 @@ void GuiRenderer::renderAuditLogScreen() {
     const HotelDatabase& db = m_system.db();
     const int badIdx = m_system.verifyAuditLogChain();
 
-    drawSectionHeader("Tamper-Evident SHA-256 Audit Chain", "Cryptographically linked ledger · Single-byte modification invalidates chain");
+    drawSectionHeader(
+        "Audit log",
+        "Review recorded staff actions and verify that historical records have not been altered.",
+        "Algorithm: Tamper-evident SHA-256 hash chain from 64-zero genesis hash.\nComplexity: O(A * L) full chain verification.\nSource: Sha256.cpp::computeAuditEntryHash, FileManager.cpp::verifyAuditChain"
+    );
 
     const float flash = 0.55f + 0.45f * std::sin(static_cast<float>(ImGui::GetTime()) * 6.0f);
     const ImVec4 bannerCol = (badIdx == -1)
@@ -772,17 +794,17 @@ void GuiRenderer::renderAuditLogScreen() {
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
     );
     if (badIdx == -1) {
-        ImGui::TextColored(pal.statusAvailable, "CHAIN VERIFIED (%zu entries intact — genesis to latest SHA-256 valid)", db.auditLog.size());
+        ImGui::TextColored(pal.statusAvailable, "Log verified (%zu entries intact from first record to latest)", db.auditLog.size());
     } else {
-        ImGui::TextColored(pal.statusOccupied, "TAMPERING DETECTED at entry #%d — Hash mismatch! Inspect data/audit_log.dat!", badIdx);
+        ImGui::TextColored(pal.statusOccupied, "Integrity mismatch at entry #%d. Inspect data/audit_log.dat.", badIdx);
     }
     ImGui::SameLine(ImGui::GetWindowWidth() - 145.0f);
-    if (primaryButton("Verify Now", ImVec2(0.0f, 32.0f))) {
+    if (primaryButton("Verify now", ImVec2(0.0f, 32.0f))) {
         const int res = m_system.verifyAuditLogChain();
         if (res == -1) {
-            Toast::push(NoticeType::Success, "Audit Chain Verified", "All " + std::to_string(db.auditLog.size()) + " entries verified.");
+            Toast::push(NoticeType::Success, "Audit log verified", "All " + std::to_string(db.auditLog.size()) + " entries are intact.");
         } else {
-            Toast::push(NoticeType::Error, "Tampering Detected!", "Hash chain broken at entry #" + std::to_string(res));
+            Toast::push(NoticeType::Error, "Integrity mismatch", "Audit log mismatch detected at entry #" + std::to_string(res) + ".");
         }
     }
     checkChildOverflow("##AuditBanner");
@@ -790,14 +812,14 @@ void GuiRenderer::renderAuditLogScreen() {
     ImGui::PopStyleColor(2);
     ImGui::Spacing();
 
-    if (beginCard("##AuditTblCard", "Chained Audit Entries (Newest First)", ImVec2(0.0f, 0.0f))) {
+    if (beginCard("##AuditTblCard", "Audit entries (newest first)", ImVec2(0.0f, 0.0f))) {
         if (ImGui::BeginTable("##AuditTbl", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY)) {
             ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 45.0f);
             ImGui::TableSetupColumn("User", ImGuiTableColumnFlags_WidthFixed, 100.0f);
             ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 145.0f);
             ImGui::TableSetupColumn("Details");
-            ImGui::TableSetupColumn("Prev Hash", ImGuiTableColumnFlags_WidthFixed, 115.0f);
-            ImGui::TableSetupColumn("SHA-256 Hash", ImGuiTableColumnFlags_WidthFixed, 115.0f);
+            ImGui::TableSetupColumn("Previous", ImGuiTableColumnFlags_WidthFixed, 115.0f);
+            ImGui::TableSetupColumn("Signature", ImGuiTableColumnFlags_WidthFixed, 115.0f);
             ImGui::TableHeadersRow();
 
             for (int i = static_cast<int>(db.auditLog.size()) - 1; i >= 0; --i) {
@@ -827,31 +849,32 @@ void GuiRenderer::renderAuditLogScreen() {
 void GuiRenderer::renderBackupsScreen() {
     const ThemePalette& pal = m_theme.getActivePalette();
     drawSectionHeader(
-        "Snapshot Backups & End-of-Day Night Audit",
-        "Atomic .tmp -> rename persistence · Automatic 5-min/logout/exit snapshots (max 10 retained) · Night Audit closeout"
+        "Backups and night audit",
+        "Create or restore hotel backups and close out the business day.",
+        "Algorithm: Atomic .tmp -> rename binary persistence with FNV-1a checksums and rolling 10-snapshot retention.\nComplexity: O(N) table serialization, O(S log S) snapshot listing (S <= 10).\nSource: FileManager.cpp::createBackupSnapshot, HotelSystem.cpp::runNightAudit"
     );
 
     if (ImGui::BeginTable("##BackupTopRow", 2, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##BackupActionsCard", "Snapshot Backup Controls", ImVec2(0.0f, 0.0f), true)) {
+        if (beginCard("##BackupActionsCard", "Backup controls", ImVec2(0.0f, 0.0f), true)) {
             ImGui::PushStyleColor(ImGuiCol_Text, pal.dimText);
-            ImGui::TextWrapped("Copies all 11 verified .dat tables into backups/YYYYMMDD_HHMMSS/.");
+            ImGui::TextWrapped("Saves a timestamped backup of all hotel data files (up to 10 snapshots kept).");
             ImGui::PopStyleColor();
             ImGui::Spacing();
-            if (primaryButton("Create Snapshot Backup Now", ImVec2(0.0f, 38.0f))) {
+            if (primaryButton("Create backup now", ImVec2(0.0f, 38.0f))) {
                 m_system.createBackupNow();
             }
         }
         endCard();
 
         ImGui::TableSetColumnIndex(1);
-        if (beginCard("##NightAuditCard", "Night Audit Business-Day Closeout", ImVec2(0.0f, 0.0f), true)) {
+        if (beginCard("##NightAuditCard", "Night audit closeout", ImVec2(0.0f, 0.0f), true)) {
             ImGui::PushStyleColor(ImGuiCol_Text, pal.dimText);
-            ImGui::TextWrapped("Rolls overdue no-shows, flags unpaid invoices, writes DailyStat & NightAudit_<date>.txt.");
+            ImGui::TextWrapped("Records overdue no-shows, flags unpaid invoices, and writes the daily closeout report.");
             ImGui::PopStyleColor();
             ImGui::Spacing();
-            if (primaryButton("Run Night Audit", ImVec2(0.0f, 38.0f))) {
+            if (primaryButton("Run night audit", ImVec2(0.0f, 38.0f))) {
                 m_system.runNightAudit(&m_adminOpsState.lastNightAuditPath, &m_adminOpsState.lastNightAuditSummary);
             }
             if (!m_adminOpsState.lastNightAuditSummary.empty()) {
@@ -927,16 +950,23 @@ void GuiRenderer::renderBackupsScreen() {
  */
 void GuiRenderer::renderSettingsScreen() {
     const ThemePalette& pal = m_theme.getActivePalette();
-    drawSectionHeader("System Settings", "Persisted atomically to data/settings.dat with FNV-1a checksum");
-    if (beginCard("##SettingsCard", "Hotel Configuration & Display", ImVec2(0.0f, 0.0f), true)) {
-        bool surgeOn = m_system.db().settings.surgeEnabled;
-        if (ImGui::Checkbox("Enable Dynamic Surge Yield Management", &surgeOn)) {
+    AppSettings& settings = m_system.db().settings;
+
+    drawSectionHeader(
+        "Settings",
+        "Configure hotel tax, dynamic pricing, text size, theme and project information.",
+        "Storage: Atomic .tmp -> rename binary serialization to data/settings.dat with FNV-1a checksum.\nComplexity: O(1) read/write.\nSource: FileManager.cpp::saveSettings, loadSettings"
+    );
+
+    if (beginCard("##SettingsCard", "Hotel configuration and display", ImVec2(0.0f, 0.0f), true)) {
+        bool surgeOn = settings.surgeEnabled;
+        if (ImGui::Checkbox("Enable automatic demand pricing", &surgeOn)) {
             m_system.setSurgeEnabled(surgeOn);
         }
         ImGui::Spacing();
-        ImGui::TextColored(pal.dimText, "GST / Hotel Tax Rate (%%)");
+        ImGui::TextColored(pal.dimText, "GST / hotel tax rate (%%)");
         ImGui::SetNextItemWidth(std::min(420.0f, ImGui::GetContentRegionAvail().x));
-        float taxPct = static_cast<float>(m_system.db().settings.taxRate * 100.0);
+        float taxPct = static_cast<float>(settings.taxRate * 100.0);
         if (ImGui::SliderFloat("##GstTaxRate", &taxPct, 0.0f, 30.0f, "%.1f%%")) {
             m_system.setTaxRate(static_cast<double>(taxPct) / 100.0);
         }
@@ -946,7 +976,7 @@ void GuiRenderer::renderSettingsScreen() {
 
         ImGui::TextColored(pal.dimText, "Text size (Ctrl+= / Ctrl+-)");
         const char* scaleLabels[4] = {"90%", "100%", "115%", "130%"};
-        const int curScaleIdx = std::clamp(m_system.db().settings.textScaleIdx, 0, 3);
+        const int curScaleIdx = std::clamp(settings.textScaleIdx, 0, 3);
         for (int i = 0; i < 4; ++i) {
             if (i > 0) { ImGui::SameLine(); }
             const bool active = (i == curScaleIdx);
@@ -954,86 +984,147 @@ void GuiRenderer::renderSettingsScreen() {
                                      ? primaryButton(scaleLabels[i], ImVec2(0.0f, 34.0f))
                                      : ghostButton(scaleLabels[i], ImVec2(0.0f, 34.0f));
             if (clicked && !active) {
-                m_system.db().settings.textScaleIdx = i;
-                m_system.fileManager().saveSettings(m_system.db().settings);
+                settings.textScaleIdx = i;
+                m_system.fileManager().saveSettings(settings);
             }
         }
 
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
-        if (ghostButton("Toggle Theme (Midnight Obsidian / Executive Pearl)", ImVec2(0.0f, 36.0f))) {
+        const char* themeSwitchLbl = (m_theme.getCurrentMode() == ThemeMode::MidnightObsidian)
+                                         ? "Switch to light theme (Executive Pearl)"
+                                         : "Switch to dark theme (Midnight Obsidian)";
+        if (ghostButton(themeSwitchLbl, ImVec2(0.0f, 36.0f))) {
             m_theme.toggleTheme();
-            m_system.db().settings.themeChoice = (m_theme.getCurrentMode() == ThemeMode::ExecutivePearl) ? 1 : 0;
-            m_system.fileManager().saveSettings(m_system.db().settings);
+            settings.themeChoice = (m_theme.getCurrentMode() == ThemeMode::ExecutivePearl) ? 1 : 0;
+            m_system.fileManager().saveSettings(settings);
         }
     }
     endCard();
+
+    ImGui::Spacing();
+
+    // About card (C2: only place where university name appears, plus version, build date & 3 saved team names)
+    if (beginCard("##AboutCard", "About", ImVec2(0.0f, 0.0f), true)) {
+        ImGui::TextColored(pal.text, "%s — %s", Cfg::HOTEL_NAME, Cfg::HOTEL_TAGLINE);
+        ImGui::TextColored(pal.dimText, "Version %s  ·  Build date: %s", Cfg::APP_VERSION, __DATE__);
+        ImGui::TextColored(pal.dimText, "Programming Fundamentals Project, NUST SEECS");
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::TextColored(pal.dimText, "Project team");
+
+        static char teamBuf1[64]{};
+        static char teamBuf2[64]{};
+        static char teamBuf3[64]{};
+        static bool teamInit = false;
+        if (!teamInit) {
+            std::snprintf(teamBuf1, sizeof(teamBuf1), "%s", settings.teamName1.c_str());
+            std::snprintf(teamBuf2, sizeof(teamBuf2), "%s", settings.teamName2.c_str());
+            std::snprintf(teamBuf3, sizeof(teamBuf3), "%s", settings.teamName3.c_str());
+            teamInit = true;
+        }
+        bool teamChanged = false;
+        const float fieldW = std::min(360.0f, ImGui::GetContentRegionAvail().x);
+        ImGui::SetNextItemWidth(fieldW);
+        teamChanged |= ImGui::InputTextWithHint("##Team1", "Team member 1", teamBuf1, sizeof(teamBuf1));
+        ImGui::SetNextItemWidth(fieldW);
+        teamChanged |= ImGui::InputTextWithHint("##Team2", "Team member 2", teamBuf2, sizeof(teamBuf2));
+        ImGui::SetNextItemWidth(fieldW);
+        teamChanged |= ImGui::InputTextWithHint("##Team3", "Team member 3", teamBuf3, sizeof(teamBuf3));
+        if (teamChanged) {
+            settings.teamName1 = teamBuf1;
+            settings.teamName2 = teamBuf2;
+            settings.teamName3 = teamBuf3;
+            m_system.fileManager().saveSettings(settings);
+        }
+    }
+    endCard();
+
+    // Collapsible Developer & Evaluation Tools card (C3: Admin only)
+    if (m_system.currentRole() == Role::Admin) {
+        ImGui::Spacing();
+        if (beginCard("##DevToolsSettingsCard", nullptr, ImVec2(0.0f, 0.0f), true)) {
+            if (ImGui::CollapsingHeader("Developer & Evaluation Tools")) {
+                ImGui::Spacing();
+                ImGui::PushStyleColor(ImGuiCol_Text, pal.dimText);
+                ImGui::TextWrapped(
+                    "Sample data loader, guided tour, algorithm telemetry, sorting benchmarks, visualiser and automated self-tests. Shortcut: Ctrl+Shift+D."
+                );
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+                if (primaryButton("Open developer tools", ImVec2(0.0f, 36.0f))) {
+                    navigateTo(ScreenId::VivaTools);
+                }
+            }
+        }
+        endCard();
+    }
 }
 
 // =============================================================================
-// 6. VIVA TOOLS: ALGORITHM X-RAY, MICRO-BENCHMARKS, VISUALISER & SELF-TEST
+// 6. DEVELOPER & EVALUATION TOOLS: X-RAY, MICRO-BENCHMARKS, VISUALISER & SELF-TEST
 // =============================================================================
 /*
- * Purpose: Renders the Viva Tools screen with 4 tabs:
+ * Purpose: Renders the Developer & Evaluation Tools screen with 5 tabs:
+ *          0. Sample Data & Guided Tour
  *          1. Algorithm X-Ray (live metrics table + Admin Recommender weight sliders)
  *          2. Micro-Benchmarks (MergeSort vs QuickSort vs std::sort on 100/1,000/10,000 ints + ImPlot bar chart)
  *          3. Step-by-Step Visualiser (animated MergeSort & Min-Heap bars)
- *          4. Startup Self-Test (all 15 Section 11 checks with PASS/FAIL status).
+ *          4. Automated Self-Test Suite (16 checks with PASS/FAIL status).
  * Inputs: None.
- * Outputs: Renders Viva Tools screen.
+ * Outputs: Renders Developer & Evaluation Tools screen.
  * Big-O: O(1) per frame; O(N log N) when Benchmark button is clicked.
  */
 void GuiRenderer::renderVivaToolsScreen() {
     const ThemePalette& pal = m_theme.getActivePalette();
     drawSectionHeader(
-        "Viva Defense Tools & Algorithm X-Ray",
-        "Live PF telemetry, sorting micro-benchmarks, step-by-step animated visualiser & automated self-test suite"
+        "Developer & Evaluation Tools",
+        "Sample data controls, algorithm telemetry, sorting benchmarks, visualiser and automated self-tests."
     );
 
-    if (ImGui::BeginTabBar("##VivaToolTabs")) {
-        // TAB 0: Viva Demo Seeder, Reset Clean State, Night Audit & 90s Guided Demo (Section 9.10 #9, Section 10)
-        if (ImGui::BeginTabItem("Demo Seeder & Guided Tour", nullptr, (m_forcedVivaTab == 0) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {
-            if (ImGui::BeginTable("##VivaSeederGrid", 2, ImGuiTableFlags_SizingStretchSame)) {
+    if (ImGui::BeginTabBar("##DevToolTabs")) {
+        // TAB 0: Sample Data, Reset to Empty System, Night Audit & 90s Guided Tour
+        if (ImGui::BeginTabItem("Sample Data & Guided Tour", nullptr, (m_forcedVivaTab == 0) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {
+            if (ImGui::BeginTable("##DevSeederGrid", 2, ImGuiTableFlags_SizingStretchSame)) {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                if (beginCard("##SeederCard", "Viva Demo Dataset Seeder (Section 10)", ImVec2(0.0f, 0.0f), true)) {
+                if (beginCard("##SeederCard", "Sample Data", ImVec2(0.0f, 0.0f), true)) {
                     ImGui::TextWrapped(
-                        "Creates 50 rooms, 35 diverse guests (22 Pakistani + 13 international across Platinum/Gold/Silver/Standard), "
-                        "30 days of historical revenue & DailyStats (76%% occupancy, 1.10x surge), 8 Cleaning + 3 Maintenance heap tasks, "
-                        "6 arrivals, 5 departures, 4 Kanban orders, 2 waitlist entries & 66 valid SHA-256 audit entries."
+                        "Loads 50 rooms, 38 guests, 90 days of occupancy and invoice history, 11 housekeeping and maintenance tasks, "
+                        "4 service orders, 2 waitlist entries and 67 verified audit log records."
                     );
                     ImGui::Spacing();
-                    if (primaryButton("Seed Viva Demo Data", ImVec2(0.0f, 38.0f))) {
+                    if (primaryButton("Load Sample Data", ImVec2(0.0f, 38.0f))) {
                         m_adminOpsState.openSeedConfirmModal = true;
                     }
                     ImGui::SameLine();
-                    if (dangerButton("Reset Clean State", ImVec2(0.0f, 38.0f))) {
+                    if (dangerButton("Reset to Empty System", ImVec2(0.0f, 38.0f))) {
                         m_adminOpsState.openResetStep1Modal = true;
                     }
                     ImGui::Spacing();
-                    if (ghostButton("Run Night Audit Closeout", ImVec2(0.0f, 34.0f))) {
+                    if (ghostButton("Run night audit", ImVec2(0.0f, 34.0f))) {
                         m_system.runNightAudit(&m_adminOpsState.lastNightAuditPath, &m_adminOpsState.lastNightAuditSummary);
                     }
                 }
                 endCard();
 
                 ImGui::TableSetColumnIndex(1);
-                if (beginCard("##GuidedDemoCard", "90-Second Automated Guided Demo Mode", ImVec2(0.0f, 0.0f), true)) {
+                if (beginCard("##GuidedDemoCard", "Guided Tour (90s)", ImVec2(0.0f, 0.0f), true)) {
                     ImGui::TextWrapped(
-                        "Automatically walks examiners through a narrated 90-second tour: "
-                        "Seed Demo Data -> Executive Dashboard -> Interactive Room Matrix -> Smart Check-In Recommender -> "
-                        "Dynamic Yield Pricing Simulator -> Housekeeping Min-Heap Dispatch -> SHA-256 Audit Chain Verification."
+                        "Runs an automated 90-second walkthrough across the Dashboard, Room Matrix, Smart Check-In, "
+                        "Pricing Simulator, Housekeeping Queue and Audit Log."
                     );
                     ImGui::Spacing();
                     if (!m_demoState.active) {
-                        if (primaryButton("Start Guided Demo (90s)", ImVec2(0.0f, 40.0f))) {
+                        if (primaryButton("Start Guided Tour", ImVec2(0.0f, 40.0f))) {
                             startGuidedDemo();
                         }
                     } else {
-                        if (dangerButton("Stop Guided Demo", ImVec2(0.0f, 40.0f))) {
+                        if (dangerButton("Stop Guided Tour", ImVec2(0.0f, 40.0f))) {
                             m_demoState.active = false;
-                            Toast::push(NoticeType::Info, "Guided Demo Stopped", "Returned to manual control.");
+                            Toast::push(NoticeType::Info, "Guided tour stopped", "Returned to manual control.");
                         }
                         ImGui::SameLine();
                         ImGui::TextColored(pal.goldHighlight, "Elapsed: %.0fs / 90s", m_demoState.elapsed);
@@ -1048,13 +1139,13 @@ void GuiRenderer::renderVivaToolsScreen() {
                 ImGui::OpenPopup("##ConfirmSeedModal");
                 m_adminOpsState.openSeedConfirmModal = false;
             }
-            ImGui::SetNextWindowSize(ImVec2(450.0f, 185.0f), ImGuiCond_Appearing);
-            if (ImGui::BeginPopupModal("##ConfirmSeedModal", nullptr, ImGuiWindowFlags_NoResize)) {
-                ImGui::TextColored(pal.accent, "Confirm Viva Demo Seeder");
+            ImGui::SetNextWindowSize(ImVec2(450.0f, 0.0f), ImGuiCond_Appearing);
+            if (ImGui::BeginPopupModal("##ConfirmSeedModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::TextColored(pal.accent, "Load Sample Data");
                 ImGui::Separator();
-                ImGui::TextWrapped("A snapshot backup will be saved first, then data/ will be populated with the full Viva Demo dataset. Proceed?");
+                ImGui::TextWrapped("A backup snapshot will be saved first, then hotel data will be replaced with the sample dataset. Proceed?");
                 ImGui::Spacing();
-                if (primaryButton("Backup & Seed Demo Data", ImVec2(0.0f, 36.0f))) {
+                if (primaryButton("Backup and load sample data", ImVec2(0.0f, 36.0f))) {
                     m_system.seedVivaDemoData();
                     ImGui::CloseCurrentPopup();
                 }
@@ -1063,16 +1154,16 @@ void GuiRenderer::renderVivaToolsScreen() {
                 ImGui::EndPopup();
             }
 
-            // Double-Confirm Reset Clean State Modals (Step 1 -> Step 2, Section 10)
+            // Double-Confirm Reset to Empty System Modals (Step 1 -> Step 2)
             if (m_adminOpsState.openResetStep1Modal) {
                 ImGui::OpenPopup("##ResetConfirmStep1");
                 m_adminOpsState.openResetStep1Modal = false;
             }
-            ImGui::SetNextWindowSize(ImVec2(450.0f, 185.0f), ImGuiCond_Appearing);
-            if (ImGui::BeginPopupModal("##ResetConfirmStep1", nullptr, ImGuiWindowFlags_NoResize)) {
-                ImGui::TextColored(pal.statusReserved, "Reset Clean State — Confirmation 1 of 2");
+            ImGui::SetNextWindowSize(ImVec2(450.0f, 0.0f), ImGuiCond_Appearing);
+            if (ImGui::BeginPopupModal("##ResetConfirmStep1", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::TextColored(pal.statusReserved, "Reset to Empty System — Confirmation 1 of 2");
                 ImGui::Separator();
-                ImGui::TextWrapped("This will wipe all guests, bookings, invoices, tasks, and statistics, leaving only 50 empty rooms and 3 default users.");
+                ImGui::TextWrapped("This will clear all guests, bookings, invoices, tasks and statistics, leaving 50 empty rooms and 3 default staff accounts.");
                 ImGui::Spacing();
                 if (dangerButton("Continue to Final Confirm ->", ImVec2(0.0f, 36.0f))) {
                     ImGui::CloseCurrentPopup();
@@ -1087,11 +1178,11 @@ void GuiRenderer::renderVivaToolsScreen() {
                 ImGui::OpenPopup("##ResetConfirmStep2");
                 m_adminOpsState.openResetStep2Modal = false;
             }
-            ImGui::SetNextWindowSize(ImVec2(450.0f, 185.0f), ImGuiCond_Appearing);
-            if (ImGui::BeginPopupModal("##ResetConfirmStep2", nullptr, ImGuiWindowFlags_NoResize)) {
-                ImGui::TextColored(pal.statusOccupied, "FINAL WARNING — Confirmation 2 of 2");
+            ImGui::SetNextWindowSize(ImVec2(450.0f, 0.0f), ImGuiCond_Appearing);
+            if (ImGui::BeginPopupModal("##ResetConfirmStep2", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::TextColored(pal.statusOccupied, "Reset to Empty System — Confirmation 2 of 2");
                 ImGui::Separator();
-                ImGui::TextWrapped("Are you absolutely sure you want to wipe data/ and reset to clean state?");
+                ImGui::TextWrapped("Are you sure you want to clear all hotel data and reset to an empty system?");
                 ImGui::Spacing();
                 if (dangerButton("Yes, Wipe & Reset Now", ImVec2(0.0f, 36.0f))) {
                     m_system.resetCleanState();
@@ -1277,15 +1368,15 @@ void GuiRenderer::renderVivaToolsScreen() {
 
         // TAB 4: Startup Self-Test (Section 11)
         if (ImGui::BeginTabItem("Self-Test Suite", nullptr, (m_forcedVivaTab == 4) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)) {
-            if (primaryButton("Re-Run All 15 Self-Tests Now", ImVec2(0.0f, 34.0f))) {
+            if (primaryButton("Re-run all self-tests", ImVec2(0.0f, 34.0f))) {
                 m_startupSelfTests = runAllSelfTests(false);
                 const auto p3 = HotelSystem::runPhase3SelfTests(false);
                 m_startupSelfTests.insert(m_startupSelfTests.end(), p3.begin(), p3.end());
-                Toast::push(NoticeType::Success, "Self-Test Complete", "All " + std::to_string(m_startupSelfTests.size()) + " checks executed.");
+                Toast::push(NoticeType::Success, "Self-test complete", "All " + std::to_string(m_startupSelfTests.size()) + " checks executed.");
             }
             ImGui::Spacing();
-            if (beginCard("##SelfTestVivaCard", "Section 11 Automated Verification Checks", ImVec2(0.0f, 0.0f))) {
-                if (ImGui::BeginTable("##VivaSelfTestTbl", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY)) {
+            if (beginCard("##SelfTestDevCard", "Automated verification checks", ImVec2(0.0f, 0.0f))) {
+                if (ImGui::BeginTable("##DevSelfTestTbl", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_ScrollY)) {
                     ImGui::TableSetupColumn("Result", ImGuiTableColumnFlags_WidthFixed, 70.0f);
                     ImGui::TableSetupColumn("Test Suite", ImGuiTableColumnFlags_WidthFixed, 300.0f);
                     ImGui::TableSetupColumn("Details");
@@ -1361,16 +1452,22 @@ void GuiRenderer::renderCommandPaletteOverlay(float deltaTime) {
     if (HotelSystem::can(m_system.currentRole(), Action::SmartCheckIn)) {
         candidates.push_back(PaletteEntry{
             "Action",
-            "Check in new guest (Smart Check-In Wizard)",
+            "Check in new guest",
             computeFuzzyRankScore(q, "Check in"),
             [this]() { navigateTo(ScreenId::SmartCheckIn); }
         });
     }
     if (HotelSystem::can(m_system.currentRole(), Action::UseVivaTools)) {
         candidates.push_back(PaletteEntry{
+            "Screen",
+            "Developer & Evaluation Tools",
+            computeFuzzyRankScore(q, "Developer Evaluation Tools X-Ray"),
+            [this]() { navigateTo(ScreenId::VivaTools); }
+        });
+        candidates.push_back(PaletteEntry{
             "Action",
-            "Seed Viva Demo Data (50 rooms, 35 guests, 30-day history)",
-            computeFuzzyRankScore(q, "Seed data"),
+            "Load sample data",
+            computeFuzzyRankScore(q, "Load sample data seed"),
             [this]() {
                 navigateTo(ScreenId::VivaTools);
                 m_system.seedVivaDemoData();
@@ -1378,21 +1475,21 @@ void GuiRenderer::renderCommandPaletteOverlay(float deltaTime) {
         });
         candidates.push_back(PaletteEntry{
             "Action",
-            "Start Guided Demo Tour (90s automated walkthrough)",
-            computeFuzzyRankScore(q, "Guided demo"),
+            "Start guided tour (90s)",
+            computeFuzzyRankScore(q, "Guided tour"),
             [this]() { startGuidedDemo(); }
         });
     }
     if (HotelSystem::can(m_system.currentRole(), Action::ViewAuditLog)) {
         candidates.push_back(PaletteEntry{
             "Action",
-            "Verify SHA-256 Audit Chain Now",
-            computeFuzzyRankScore(q, "Verify audit chain"),
+            "Verify audit log integrity",
+            computeFuzzyRankScore(q, "Verify audit log"),
             [this]() {
                 navigateTo(ScreenId::AuditLog);
                 const int idx = m_system.verifyAuditLogChain();
-                Toast::push(idx == -1 ? NoticeType::Success : NoticeType::Error, "Audit Verification",
-                            idx == -1 ? "Hash chain verified intact." : ("Tampering at #" + std::to_string(idx)));
+                Toast::push(idx == -1 ? NoticeType::Success : NoticeType::Error, "Audit verification",
+                            idx == -1 ? "All audit entries verified intact." : ("Integrity mismatch at entry #" + std::to_string(idx) + "."));
             }
         });
     }
@@ -1523,28 +1620,29 @@ void GuiRenderer::renderShortcutsOverlay() {
     const ImGuiViewport* vp = ImGui::GetMainViewport();
 
     ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(560.0f, 400.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(580.0f, 440.0f), ImGuiCond_Always);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, pal.panel);
     ImGui::PushStyleColor(ImGuiCol_Border, pal.accent);
 
-    if (ImGui::Begin("Keyboard Shortcuts (F1)", &m_showShortcutsOverlay, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
-        const char* keys[8] = {"Ctrl + K", "Ctrl + T", "Ctrl + = / -", "Ctrl + Z", "Ctrl + Y", "F1", "Esc", "Up / Down / Enter"};
-        const char* desc[8] = {
-            "Open Command Palette (Levenshtein fuzzy search)",
-            "Toggle Theme (Midnight Obsidian <-> Executive Pearl)",
-            "Increase / Decrease Text Size (90% to 130%)",
-            "Undo last room status, swap, charge, or date edit",
-            "Redo reverted command",
-            "Toggle this Keyboard Shortcuts Cheat Sheet",
-            "Close active overlay / modal",
-            "Navigate and execute Command Palette results"
+    if (ImGui::Begin("Keyboard shortcuts (F1)", &m_showShortcutsOverlay, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
+        const char* keys[9] = {"Ctrl + K", "Ctrl + T", "Ctrl + = / -", "Ctrl + Shift + D", "Ctrl + Z", "Ctrl + Y", "F1", "Esc", "Up / Down / Enter"};
+        const char* desc[9] = {
+            "Open quick search and command palette",
+            "Switch light and dark theme",
+            "Increase or decrease text size (90% to 130%)",
+            "Open Developer & Evaluation Tools (Admin)",
+            "Undo last room status, swap, charge or date edit",
+            "Redo last reverted action",
+            "Show or hide this shortcuts list",
+            "Close active overlay or dialog",
+            "Navigate and run command palette results"
         };
 
         if (ImGui::BeginTable("##ShortcutsTbl", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
-            ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthFixed, 165.0f);
+            ImGui::TableSetupColumn("Shortcut", ImGuiTableColumnFlags_WidthFixed, 175.0f);
             ImGui::TableSetupColumn("Action");
             ImGui::TableHeadersRow();
-            for (int i = 0; i < 8; ++i) {
+            for (int i = 0; i < 9; ++i) {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0); drawBadge(keys[i], pal.accent);
                 ImGui::TableSetColumnIndex(1); ImGui::Text("%s", desc[i]);
@@ -1561,12 +1659,10 @@ void GuiRenderer::renderShortcutsOverlay() {
 }
 
 // =============================================================================
-// 9. GUIDED DEMO MODE (90-SECOND AUTOMATED WALKTHROUGH, Section 9.10 #9)
+// 9. GUIDED TOUR MODE (90-SECOND AUTOMATED WALKTHROUGH)
 // =============================================================================
 /*
- * Purpose: Starts the 90-second Guided Demo Mode auto-walking examiners through:
- *          Seed -> Dashboard -> Room Matrix -> Smart Check-In Recommender -> Yield Surge ->
- *          Housekeeping Min-Heap Dispatch -> SHA-256 Audit Verification -> Algorithm X-Ray.
+ * Purpose: Starts the 90-second Guided Tour auto-walking through core hotel workflows.
  * Inputs: None.
  * Outputs: Activates m_demoState and resets timer.
  * Big-O: O(1) time, O(1) space.
@@ -1575,13 +1671,13 @@ void GuiRenderer::startGuidedDemo() {
     m_demoState.active      = true;
     m_demoState.elapsed     = 0.0f;
     m_demoState.lastStage   = -1;
-    m_demoState.captionText = "Starting 90-second NUST SEECS HMS Guided Viva Tour...";
-    Toast::push(NoticeType::Info, "Guided Demo Started", "90-second narrated tour is now running.");
+    m_demoState.captionText = "Starting 90-second Grand Meridian Hotel guided tour...";
+    Toast::push(NoticeType::Info, "Guided tour started", "90-second automated tour is running.");
 }
 
 /*
- * Purpose: Advances the 90-second Guided Demo state machine and renders a floating bottom caption bar
- *          with progress indicator and [Skip Step] / [Stop Tour] controls.
+ * Purpose: Advances the 90-second Guided Tour state machine and renders a floating bottom caption bar
+ *          with progress indicator and [Next step] / [Stop] controls.
  * Inputs: deltaTime.
  * Outputs: Drives automated navigation/actions and renders caption overlay.
  * Big-O: O(1) per frame.
@@ -1598,22 +1694,22 @@ void GuiRenderer::updateAndRenderGuidedDemo(float deltaTime) {
         m_demoState.lastStage = stage;
         switch (stage) {
             case 0:
-                m_demoState.captionText = "[Step 1/7 — Viva Seeder] Populating 50 rooms, 35 Pakistani & international guests, 30-day revenue history & 66 SHA-256 audit entries...";
+                m_demoState.captionText = "Step 1/7 — Sample data: loading 50 rooms, 38 guests, 90 days of history and audit records.";
                 if (HotelSystem::can(m_system.currentRole(), Action::UseVivaTools)) {
                     m_system.seedVivaDemoData();
                 }
                 navigateTo(ScreenId::Dashboard);
                 break;
             case 1:
-                m_demoState.captionText = "[Step 2/7 — Executive Dashboard] Live KPIs (76% Occupancy, 1.10x Surge, ADR, RevPAR), ImPlot 30-day trend + 7-day regression forecast & Donut chart.";
+                m_demoState.captionText = "Step 2/7 — Dashboard: live occupancy, daily revenue, ADR, RevPAR and 7-day forecast.";
                 navigateTo(ScreenId::Dashboard);
                 break;
             case 2:
-                m_demoState.captionText = "[Step 3/7 — Floor-Plan Room Matrix] 5 Floors x 10 Rooms with Elevator/Stairs, VIP Crowns, Urgent Pulsing Rings & Live Accrued Folio Modal.";
+                m_demoState.captionText = "Step 3/7 — Room matrix: five floors with live status, VIP badges and room actions.";
                 navigateTo(ScreenId::RoomMatrix);
                 break;
             case 3:
-                m_demoState.captionText = "[Step 4/7 — Smart Check-In & Recommender] Multi-Criteria Weighted Scoring ranked via custom MergeSort & cross-checked against std::sort.";
+                m_demoState.captionText = "Step 4/7 — Smart check-in: guest lookup and ranked room recommendations.";
                 if (!m_system.db().guests.empty()) {
                     m_wizardState = SmartCheckInState{};
                     m_wizardState.selectedGuestId = m_system.db().guests.front().id;
@@ -1622,23 +1718,23 @@ void GuiRenderer::updateAndRenderGuidedDemo(float deltaTime) {
                 navigateTo(ScreenId::SmartCheckIn);
                 break;
             case 4:
-                m_demoState.captionText = "[Step 5/7 — Dynamic Yield Simulator] Capacity-aware revenue curve R(s) = roundTo10(base * s) * min(50, D0 * s^epsilon) with revenue-maximising peak.";
+                m_demoState.captionText = "Step 5/7 — Pricing simulator: occupancy-based rates and expected nightly revenue curve.";
                 m_yieldState.occSliderPct = 88.0f;
                 m_yieldState.weekendNight = true;
                 navigateTo(ScreenId::YieldManagement);
                 break;
             case 5:
-                m_demoState.captionText = "[Step 6/7 — Min-Heap Dispatch Board] Custom array-backed Binary Min-Heap ordering 11 Cleaning & Maintenance tasks by P = 3U + V + E + 2*sev.";
+                m_demoState.captionText = "Step 6/7 — Housekeeping: cleaning and maintenance tasks ordered by urgency.";
                 navigateTo(ScreenId::HousekeepingBoard);
                 break;
             case 6:
-                m_demoState.captionText = "[Step 7/7 — SHA-256 Audit Chain] Verifying every cryptographic link from genesis (64 zeros) to the latest entry.";
+                m_demoState.captionText = "Step 7/7 — Audit log: verifying every recorded staff action from start to latest.";
                 navigateTo(ScreenId::AuditLog);
                 m_system.verifyAuditLogChain();
                 break;
             default:
                 m_demoState.active = false;
-                Toast::push(NoticeType::Success, "Guided Demo Complete", "All core HMS features demonstrated in 90 seconds!");
+                Toast::push(NoticeType::Success, "Guided tour complete", "All core hotel views were shown.");
                 return;
         }
     }
@@ -1656,7 +1752,7 @@ void GuiRenderer::updateAndRenderGuidedDemo(float deltaTime) {
 
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("##GuidedDemoCaptionBar", nullptr, flags)) {
-        drawBadge("GUIDED DEMO", pal.goldHighlight, ImVec4(0.08f, 0.08f, 0.10f, 1.0f));
+        drawBadge("GUIDED TOUR", pal.goldHighlight, ImVec4(0.08f, 0.08f, 0.10f, 1.0f));
         ImGui::SameLine();
         ImGui::TextColored(pal.text, "%s", m_demoState.captionText.c_str());
 

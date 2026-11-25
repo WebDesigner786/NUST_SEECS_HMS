@@ -129,8 +129,9 @@ void GuiRenderer::renderAdminDashboard() {
     const YieldPricingResult yield = m_system.getTodayYieldPricing();
 
     drawSectionHeader(
-        "Executive Admin Dashboard",
-        "Real-time hotel occupancy, revenue telemetry, floor utilization & tamper-evident activity feed"
+        "Dashboard",
+        "Today's occupancy, revenue and activity at a glance.",
+        "Algorithm: Ordinary Least-Squares Linear Regression (7-day revenue forecast) + Dynamic Yield Pricing.\nComplexity: O(N) over 30 daily stats, O(R) over 50 rooms.\nSource: Algorithms.cpp::compute7DayForecast, computeYieldPricing"
     );
 
     // Compute room status breakdown & floor counts
@@ -226,7 +227,7 @@ void GuiRenderer::renderAdminDashboard() {
     if (ImGui::BeginTable("##AdminChartsRow", 2, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        if (beginCard("##RevChartCard", "Revenue — Last 30 Days + 7-Day Linear Forecast", ImVec2(0.0f, chartCardH))) {
+        if (beginCard("##RevChartCard", "Revenue — last 30 days and 7-day forecast", ImVec2(0.0f, chartCardH))) {
             const LinearRegressionForecast fc = compute7DayForecast(revHistory30, "Dashboard Revenue");
             const int histN = static_cast<int>(revHistory30.size());
             std::vector<double> xsHist(static_cast<std::size_t>(histN));
@@ -322,9 +323,9 @@ void GuiRenderer::renderAdminDashboard() {
         endCard();
 
         ImGui::TableSetColumnIndex(2);
-        if (beginCard("##ActivityFeedCard", "Live Audit Activity Feed", ImVec2(0.0f, 0.0f), true)) {
+        if (beginCard("##ActivityFeedCard", "Recent hotel activity", ImVec2(0.0f, 0.0f), true)) {
             if (db.auditLog.empty()) {
-                drawEmptyState("No Audit Activity", "Actions are automatically hash-chained here.");
+                drawEmptyState("No recent activity", "Staff and booking actions will appear here.");
             } else {
                 const int startIdx = std::max(0, static_cast<int>(db.auditLog.size()) - 6);
                 for (int i = static_cast<int>(db.auditLog.size()) - 1; i >= startIdx; --i) {
@@ -363,8 +364,9 @@ void GuiRenderer::renderReceptionistDashboard() {
     const int32_t today = DateUtil::todayDayNumber();
 
     drawSectionHeader(
-        "Front Desk Reception Dashboard",
-        "Today's arrivals, departures, real-time room availability & quick check-in actions"
+        "Front desk dashboard",
+        "Today's arrivals, departures and available rooms.",
+        "Algorithm: Linear room & booking scan.\nComplexity: O(R + B) time, O(1) space.\nSource: Gui_Dashboard.cpp::renderReceptionistDashboard"
     );
 
     int availCount = 0;
@@ -379,29 +381,29 @@ void GuiRenderer::renderReceptionistDashboard() {
     if (ImGui::BeginTable("##RecepKpis", 3, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        drawKpiTile("##RKpiAvail", "AVAILABLE ROOMS", static_cast<double>(availCount), "", " Rooms", false, "Ready Now", true, flatSpark, pal.statusAvailable);
+        drawKpiTile("##RKpiAvail", "AVAILABLE ROOMS", static_cast<double>(availCount), "", " Rooms", false, "Ready now", true, flatSpark, pal.statusAvailable);
         ImGui::TableSetColumnIndex(1);
-        drawKpiTile("##RKpiOcc", "OCCUPIED ROOMS", static_cast<double>(occupiedCount), "", " Rooms", false, "In-House", true, flatSpark, pal.statusOccupied);
+        drawKpiTile("##RKpiOcc", "OCCUPIED ROOMS", static_cast<double>(occupiedCount), "", " Rooms", false, "In-house", true, flatSpark, pal.statusOccupied);
         ImGui::TableSetColumnIndex(2);
-        drawKpiTile("##RKpiWait", "WAITLIST QUEUE", static_cast<double>(db.waitlist.size()), "", " Guests", false, "FIFO Queue", true, flatSpark, pal.goldHighlight);
+        drawKpiTile("##RKpiWait", "WAITLIST", static_cast<double>(db.waitlist.size()), "", " Guests", false, "Waiting", true, flatSpark, pal.goldHighlight);
         ImGui::EndTable();
     }
 
     ImGui::Spacing();
-    if (beginCard("##RecepQuickActions", "Quick Front Desk Actions", ImVec2(0.0f, 0.0f), true)) {
-        if (primaryButton("Smart Check-In Wizard", ImVec2(0.0f, 38.0f))) {
+    if (beginCard("##RecepQuickActions", "Quick actions", ImVec2(0.0f, 0.0f), true)) {
+        if (primaryButton("New check-in", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::SmartCheckIn);
         }
         ImGui::SameLine();
-        if (ghostButton("Open Room Matrix", ImVec2(0.0f, 38.0f))) {
+        if (ghostButton("Open room matrix", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::RoomMatrix);
         }
         ImGui::SameLine();
-        if (ghostButton("Guest CRM Registry", ImVec2(0.0f, 38.0f))) {
+        if (ghostButton("Guest directory", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::Guests);
         }
         ImGui::SameLine();
-        if (ghostButton("View Waitlist", ImVec2(0.0f, 38.0f))) {
+        if (ghostButton("View waitlist", ImVec2(0.0f, 38.0f))) {
             navigateTo(ScreenId::Waitlist);
         }
     }
@@ -461,8 +463,9 @@ void GuiRenderer::renderHousekeepingDashboard() {
     const std::vector<HousekeepingTask> queueOrder = m_system.getHousekeepingDispatchOrder();
 
     drawSectionHeader(
-        "Housekeeping & Maintenance Dashboard",
-        "Binary Min-Heap priority queue status, turnaround times & ready rooms"
+        "Housekeeping dashboard",
+        "Pending room cleaning, maintenance tasks and turnaround times.",
+        "Algorithm: Custom array-backed Binary Min-Heap keyed on -P (P = 3U + V + E + 2*sev).\nComplexity: O(T log T) to pop ordered dispatch queue.\nSource: Algorithms.cpp::TaskMinHeap, HotelSystem.cpp::getHousekeepingDispatchOrder"
     );
 
     int readyToday = 0;
@@ -487,9 +490,9 @@ void GuiRenderer::renderHousekeepingDashboard() {
     if (ImGui::BeginTable("##HkKpis", 3, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
-        drawKpiTile("##HkQueueLen", "DISPATCH QUEUE LENGTH", static_cast<double>(queueOrder.size()), "", " Tasks", false, "Min-Heap Active", true, flatSpark, pal.statusCleaning);
+        drawKpiTile("##HkQueueLen", "OPEN TASKS", static_cast<double>(queueOrder.size()), "", " Tasks", false, "Priority sorted", true, flatSpark, pal.statusCleaning);
         ImGui::TableSetColumnIndex(1);
-        drawKpiTile("##HkAvgWait", "AVG WAIT TIME", avgWaitMins, "", " min", false, "Live SLA", avgWaitMins < 45.0, flatSpark, pal.statusReserved);
+        drawKpiTile("##HkAvgWait", "AVERAGE WAIT", avgWaitMins, "", " min", false, "Turnaround", avgWaitMins < 45.0, flatSpark, pal.statusReserved);
         ImGui::TableSetColumnIndex(2);
         drawKpiTile("##HkReady", "ROOMS READY TODAY", static_cast<double>(readyToday), "", " / 50", false, "Available", true, flatSpark, pal.statusAvailable);
         ImGui::EndTable();
@@ -497,9 +500,9 @@ void GuiRenderer::renderHousekeepingDashboard() {
 
     ImGui::Spacing();
     const float hkPrevH = std::max(240.0f, ImGui::GetContentRegionAvail().y - 4.0f);
-    if (beginCard("##HkPriorityPreview", "Top Priority Tasks (Min-Heap Pop Order)", ImVec2(0.0f, hkPrevH))) {
+    if (beginCard("##HkPriorityPreview", "Top priority tasks", ImVec2(0.0f, hkPrevH))) {
         if (queueOrder.empty()) {
-            drawEmptyState("Dispatch Queue Empty", "All rooms are clean and operational.");
+            drawEmptyState("No pending tasks", "All rooms are clean and ready for guests.");
         } else {
             const std::size_t limit = std::min<std::size_t>(8U, queueOrder.size());
             for (std::size_t i = 0U; i < limit; ++i) {

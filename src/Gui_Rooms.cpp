@@ -214,8 +214,9 @@ void GuiRenderer::renderRoomMatrixScreen() {
     const float timeSec = static_cast<float>(ImGui::GetTime());
 
     drawSectionHeader(
-        "Interactive Floor-Plan Room Matrix",
-        "5 Floors · 50 Rooms (101–510) · Click any room tile for live accrued billing & operations"
+        "Room matrix",
+        "Live status across all five floors. Select any room to view stay details or actions.",
+        "Algorithm: Dynamic Yield Pricing + Multi-Criteria Room Recommender (for room swaps).\nComplexity: O(R) render scan; O(R log R) swap recommendation via MergeSort.\nSource: Gui_Rooms.cpp::renderRoomMatrixScreen, Algorithms.cpp::recommendRooms"
     );
 
     // Count rooms per status for the legend & filter chips
@@ -611,9 +612,9 @@ void GuiRenderer::renderRoomDetailModal() {
                 const int32_t today = DateUtil::todayDayNumber();
                 const int nightsSoFar = std::max(1, today - activeBooking->checkInDay);
                 ImGui::Text(
-                    "Stay   : %s -> %s",
-                    DateUtil::formatDate(activeBooking->checkInDay).c_str(),
-                    DateUtil::formatDate(activeBooking->checkOutDay).c_str()
+                    "Stay   : %s – %s",
+                    DateUtil::formatDateUI(activeBooking->checkInDay).c_str(),
+                    DateUtil::formatDateUI(activeBooking->checkOutDay).c_str()
                 );
                 ImGui::Text("Nights : %d booked (%d elapsed)", std::max(1, activeBooking->checkOutDay - activeBooking->checkInDay), nightsSoFar);
                 ImGui::Separator();
@@ -736,7 +737,7 @@ void GuiRenderer::renderRoomDetailModal() {
             ImGui::SetNextItemWidth(180.0f);
             ImGui::Combo("Payment Method", &m_matrixState.checkoutPayMethodIdx, payMethods, 3);
             ImGui::SameLine();
-            if (primaryButton("Complete Check-Out", ImVec2(0.0f, 34.0f))) {
+            if (primaryButton("Complete check-out", ImVec2(0.0f, 34.0f))) {
                 const CheckOutResult co = m_system.checkOutBooking(
                     activeBooking->id,
                     DateUtil::currentMinuteOfDay(),
@@ -751,12 +752,12 @@ void GuiRenderer::renderRoomDetailModal() {
                 }
             }
         } else if (m_matrixState.showMaintForm) {
-            ImGui::TextColored(pal.statusOccupied, "Flag Maintenance Task (Min-Heap Priority)");
+            ImGui::TextColored(pal.statusOccupied, "Report maintenance issue");
             ImGui::SetNextItemWidth(180.0f);
             ImGui::SliderInt("Severity (1-5)", &m_matrixState.maintSeverity, 1, 5);
             ImGui::SameLine();
             ImGui::SetNextItemWidth(260.0f);
-            ImGui::InputTextWithHint("##MaintNote", "Issue description (e.g. AC leak)...", m_matrixState.maintNoteBuf, sizeof(m_matrixState.maintNoteBuf));
+            ImGui::InputTextWithHint("##MaintNote", "Describe the issue", m_matrixState.maintNoteBuf, sizeof(m_matrixState.maintNoteBuf));
             ImGui::SameLine();
             if (dangerButton("Submit", ImVec2(0.0f, 34.0f))) {
                 const std::string note = m_matrixState.maintNoteBuf[0] ? m_matrixState.maintNoteBuf : "Maintenance inspection required";
@@ -766,12 +767,12 @@ void GuiRenderer::renderRoomDetailModal() {
             }
         } else if (m_matrixState.showChargeForm && activeBooking != nullptr) {
             const char* addOnNames[] = {"Minibar", "Laundry", "Dining", "Spa", "Transport"};
-            ImGui::TextColored(pal.accent, "Post Service Charge to Folio");
+            ImGui::TextColored(pal.accent, "Post service charge to folio");
             ImGui::SetNextItemWidth(115.0f);
             ImGui::Combo("##ChgType", &m_matrixState.chargeTypeIdx, addOnNames, 5);
             ImGui::SameLine();
             ImGui::SetNextItemWidth(175.0f);
-            ImGui::InputTextWithHint("##ChgDesc", "Item description...", m_matrixState.chargeDescBuf, sizeof(m_matrixState.chargeDescBuf));
+            ImGui::InputTextWithHint("##ChgDesc", "Item description", m_matrixState.chargeDescBuf, sizeof(m_matrixState.chargeDescBuf));
             ImGui::SameLine();
             ImGui::SetNextItemWidth(95.0f);
             ImGui::InputFloat("PKR##ChgP", &m_matrixState.chargeUnitPrice, 0.0f, 0.0f, "%.0f");
@@ -793,7 +794,7 @@ void GuiRenderer::renderRoomDetailModal() {
                 }
             }
         } else if (m_matrixState.showSwapPicker && activeBooking != nullptr && guest != nullptr) {
-            ImGui::TextColored(pal.secondaryAccent, "Recommended Rooms for Swap (Custom MergeSort Ranked)");
+            ImGui::TextColored(pal.secondaryAccent, "Suggested rooms for swap");
             GuestPreferences prefs{};
             prefs.budget = room->baseRate * yield.surge * 1.25;
             prefs.anyView = false;
@@ -857,12 +858,13 @@ void GuiRenderer::renderSmartCheckInScreen() {
     const YieldPricingResult yield = m_system.getTodayYieldPricing();
 
     drawSectionHeader(
-        "Smart Check-In Wizard",
-        "4-step guided intake powered by Binary Search CNIC lookup, Custom Hash Table & Multi-Criteria Room Recommender"
+        "Smart check-in",
+        "Register or select a guest, choose dates, and pick the best matching room.",
+        "Algorithms: Binary Search CNIC lookup (O(log G)), 127-bucket Custom Hash Table duplicate check (O(1) avg), Levenshtein fuzzy ranking, and Multi-Criteria Room Recommender sorted by MergeSort (O(R log R)).\nSource: HotelSystem.cpp::findGuestByCnicBinarySearch, Algorithms.cpp::CnicHashTable, recommendRooms"
     );
 
     // Horizontal 4-Step Stepper Indicator
-    const char* stepLabels[4] = {"1. Guest Profile", "2. Stay Details", "3. Smart Match", "4. Review & Confirm"};
+    const char* stepLabels[4] = {"1. Guest profile", "2. Stay details", "3. Room match", "4. Review and confirm"};
     if (beginCard("##WizardStepper", nullptr, ImVec2(0.0f, 0.0f), true)) {
         if (ImGui::BeginTable("##StepBar", 4, ImGuiTableFlags_SizingStretchSame)) {
             ImGui::TableNextRow();
@@ -904,17 +906,17 @@ void GuiRenderer::renderSmartCheckInScreen() {
             ImGui::SetNextItemWidth(cnicW);
             ImGui::InputTextWithHint("##WizCnicBin", "CNIC", m_wizardState.cnicExactBuf, sizeof(m_wizardState.cnicExactBuf));
             ImGui::SameLine();
-            if (ghostButton("Binary Search CNIC", ImVec2(0.0f, 34.0f))) {
+            if (ghostButton("Find by CNIC", ImVec2(0.0f, 34.0f))) {
                 const Guest* found = m_system.findGuestByCnicBinarySearch(m_wizardState.cnicExactBuf);
                 if (found != nullptr) {
                     m_wizardState.selectedGuestId = found->id;
-                    Toast::push(NoticeType::Success, "CNIC Binary Search Hit", "Selected " + found->fullName);
+                    Toast::push(NoticeType::Success, "Guest found", "Selected " + found->fullName + ".");
                 } else {
-                    Toast::push(NoticeType::Warning, "CNIC Not Found", "No guest matches CNIC: " + std::string(m_wizardState.cnicExactBuf));
+                    Toast::push(NoticeType::Warning, "Guest not found", "No guest matches CNIC " + std::string(m_wizardState.cnicExactBuf) + ".");
                 }
             }
             ImGui::SameLine();
-            if (primaryButton(m_wizardState.showNewGuestForm ? "Hide New Guest Form" : "+ New Guest", ImVec2(0.0f, 34.0f))) {
+            if (primaryButton(m_wizardState.showNewGuestForm ? "Hide new guest form" : "New guest", ImVec2(0.0f, 34.0f))) {
                 m_wizardState.showNewGuestForm = !m_wizardState.showNewGuestForm;
             }
 
@@ -927,10 +929,10 @@ void GuiRenderer::renderSmartCheckInScreen() {
                     ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY,
                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
                 );
-                ImGui::TextColored(pal.accent, "Register New Guest (Hand-Written Character Validation + CNIC Hash Table)");
+                ImGui::TextColored(pal.accent, "Register new guest");
                 ImGui::Separator();
 
-                ImGui::Checkbox("Foreign National (Use Passport instead of CNIC)", &m_wizardState.newIsForeign);
+                ImGui::Checkbox("Foreign national (use passport instead of CNIC)", &m_wizardState.newIsForeign);
 
                 std::string nameErr, idErr, phoneErr, emailErr;
                 const bool nameOk = validatePersonName(m_wizardState.newNameBuf, &nameErr);
@@ -940,7 +942,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                     idOk = validateCnic(m_wizardState.newCnicBuf, &idErr);
                     if (idOk && m_system.isDuplicateCnic(m_wizardState.newCnicBuf)) {
                         idOk = false;
-                        idErr = "Duplicate CNIC detected via Custom Hash Table!";
+                        idErr = "A guest with this CNIC is already registered.";
                     }
                     phoneOk = validatePakistaniPhone(m_wizardState.newPhoneBuf, nullptr, &phoneErr);
                 } else {
@@ -1068,12 +1070,12 @@ void GuiRenderer::renderSmartCheckInScreen() {
             ImGui::SetNextItemWidth(220.0f);
             ImGui::SliderInt("Check-In Offset (days from today)", &m_wizardState.checkInOffsetDays, 0, 30);
             ImGui::SameLine();
-            ImGui::TextColored(pal.secondaryAccent, "  Check-In: %s", DateUtil::formatDate(reqIn).c_str());
+            ImGui::TextColored(pal.secondaryAccent, "  Check-in: %s", DateUtil::formatDateUI(reqIn).c_str());
 
             ImGui::SetNextItemWidth(220.0f);
             ImGui::SliderInt("Length of Stay (Nights)", &m_wizardState.nights, 1, 21);
             ImGui::SameLine();
-            ImGui::TextColored(pal.secondaryAccent, "  Check-Out: %s", DateUtil::formatDate(reqOut).c_str());
+            ImGui::TextColored(pal.secondaryAccent, "  Check-out: %s", DateUtil::formatDateUI(reqOut).c_str());
 
             ImGui::SetNextItemWidth(160.0f);
             ImGui::InputInt("Adults", &m_wizardState.adults);
@@ -1169,9 +1171,9 @@ void GuiRenderer::renderSmartCheckInScreen() {
             );
 
             if (top3.empty()) {
-                drawEmptyState("No Available Rooms for Selected Dates", "You can place this guest on the FIFO Waitlist Queue.");
+                drawEmptyState("No available rooms for selected dates", "Add this guest to the waitlist to be notified when a room opens.");
                 ImGui::Spacing();
-                if (primaryButton("Add to Waitlist", ImVec2(0.0f, 38.0f))) {
+                if (primaryButton("Add to waitlist", ImVec2(0.0f, 38.0f))) {
                     const RoomType wanted = (m_wizardState.prefs.budget >= 35000.0)
                                                 ? RoomType::Presidential
                                                 : ((m_wizardState.prefs.budget >= 20000.0)
@@ -1182,11 +1184,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                     }
                 }
             } else {
-                ImGui::TextColored(
-                    pal.secondaryAccent,
-                    "Top-3 Smart Recommendations (Custom MergeSort · std::sort Cross-Check: %s)",
-                    m_wizardState.stlCrossCheckOk ? "VERIFIED" : "MISMATCH"
-                );
+                ImGui::TextColored(pal.secondaryAccent, "Top 3 recommended rooms");
                 ImGui::Spacing();
 
                 if (ImGui::BeginTable("##Top3RecCards", 3, ImGuiTableFlags_SizingStretchSame)) {
@@ -1273,7 +1271,7 @@ void GuiRenderer::renderSmartCheckInScreen() {
                 ImGui::Separator();
                 ImGui::Text("Guest           : %s (%s)", g->fullName.c_str(), toString(g->tier));
                 ImGui::Text("Room            : Room %d — %s (%s View, %s Bed)", r->number, toString(r->type), toString(r->view), toString(r->bed));
-                ImGui::Text("Stay Dates      : %s to %s (%d nights)", DateUtil::formatDate(reqIn).c_str(), DateUtil::formatDate(reqOut).c_str(), est.nights);
+                ImGui::Text("Stay dates      : %s to %s (%d nights)", DateUtil::formatDateUI(reqIn).c_str(), DateUtil::formatDateUI(reqOut).c_str(), est.nights);
                 ImGui::Text("Occupancy       : %d Adults, %d Children", m_wizardState.adults, m_wizardState.children);
                 ImGui::Text("Mode            : %s", m_wizardState.immediateCheckIn ? "Immediate Walk-In Check-In" : "Confirmed Reservation");
                 ImGui::Separator();
